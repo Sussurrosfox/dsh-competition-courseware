@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-2020-12/schema#",
+  "$id": "competition-courseware/solution-task.schema.json",
+  "title": "Subquestion Solution Task Schema",
+  "description": "逐小问参考解答中间契约（契约 2.5.0），用于子 Agent 针对 student-task.json 中的各探究小问生成详尽严谨参考解答。每小问解答独立闭环，严禁集中在某一问或出现'同上'等敷衍占位。由 broker 校验并提升至 teaching/generated/<qid>-solution-task.json。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "task_id",
+    "question_id",
+    "brief_id",
+    "brief_revision",
+    "packet_digest",
+    "receipt_ref",
+    "execution_metadata",
+    "subquestion_solutions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "2.5.0"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_-]+$",
+      "description": "broker create_run 签发的本轮 run ID"
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^task-[0-9A-Za-z_-]+$",
+      "description": "规范任务标识，如 task-2"
+    },
+    "question_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "题目 ID，如 2"
+    },
+    "brief_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "brief_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "packet_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "对应 solution-packet 的 sha256 摘要"
+    },
+    "receipt_ref": {
+      "type": "string",
+      "description": "broker 签发的收据文件引用"
+    },
+    "execution_metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["worker_session_id", "created_at"],
+      "properties": {
+        "worker_session_id": {
+          "type": "string",
+          "description": "执行该任务的 worker 会话唯一标识"
+        },
+        "created_at": {
+          "type": "string",
+          "description": "生成时间戳 (ISO-8601)"
+        }
+      }
+    },
+    "subquestion_solutions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "description": "针对该题各小问的独立解答列表，必须与 student-task 的 subquestions 严格 1:1 同构",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subquestion_id",
+          "prompt",
+          "detailed_solution"
+        ],
+        "properties": {
+          "subquestion_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "小问唯一标识，必须与 student-task.json 中的 subquestion_id 严格一致"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "对应小问的设问提示文本，逐字回显以核对无漂移"
+          },
+          "detailed_solution": {
+            "type": "string",
+            "minLength": 40,
+            "description": "针对该具体小问独立闭环的严谨推导与参考解答（Markdown/LaTeX）。排版规范：尽可能多使用分段换行，尽可能多使用独立行间公式（\\[ ... \\]）与 LaTeX 列表环境（enumerate/itemize），保持版面疏松透气易于中学生阅读理解；单点阈值常量 MIN_SOLUTION_CHARS=40"
+          },
+          "key_result": {
+            "type": "string",
+            "description": "该小问的核心结论或代数特征（可选）"
+          }
+        }
+      }
+    }
+  }
+}

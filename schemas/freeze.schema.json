@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/freeze.schema.json",
+  "title": "FreezeRecord",
+  "description": "研究冻结记录（research/freeze.json 及 revisions/ 归档）。冻结的是一个可修改但不能静默覆盖的版本；摘要元数据保存在本记录中，文件自身 digest 不纳入自身计算。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "brief_id",
+    "revision",
+    "brief_digest",
+    "dependency_digests",
+    "research_review_refs",
+    "decision_ref"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "brief_id": {"type": "string", "minLength": 1},
+    "revision": {"type": "integer", "minimum": 1},
+    "brief_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "由 contract.compute_brief_digest 计算：brief 本身 + 所引用研究文件与必要输入。"
+    },
+    "dependency_digests": {
+      "type": "object",
+      "description": "参与 brief_digest 的各引用文件摘要（项目相对路径 -> SHA-256）。",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "research_review_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/relPath"},
+      "description": "研究审查引用；审查记录绑定同一 brief_digest。"
+    },
+    "decision_ref": {
+      "$ref": "#/$defs/relPath",
+      "description": "冻结决策引用：主 agent 按冻结条件执行的决策记录。"
+    },
+    "frozen_at": {"type": "string"}
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/solution.schema.json",
+  "title": "SolutionReport",
+  "description": "严格破局与通法攻坚专家输出（research/problems/<problem_id>/solution.json）：无跳步代数推导、等号与边界闭合、动机逆向解析与探针对账。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "problem_id",
+    "statement_ref",
+    "proof_ref",
+    "proof_obligations",
+    "equality_boundary",
+    "motivation_trace",
+    "probe_reconciliation",
+    "verification_status",
+    "execution_metadata"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "problem_id": {"type": "string", "minLength": 1},
+    "statement_ref": {
+      "$ref": "#/$defs/relPath",
+      "description": "题面 Markdown 引用。"
+    },
+    "proof_ref": {
+      "$ref": "#/$defs/relPath",
+      "description": "完整严谨证明 Markdown 引用（如 solution.md）。"
+    },
+    "proof_obligations": {
+      "type": "array",
+      "minItems": 1,
+      "description": "证明义务清单，进入交接包前全部项 status 必须为 verified。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["obligation_id", "claim", "evidence_ref", "status"],
+        "properties": {
+          "obligation_id": {"type": "string", "minLength": 1},
+          "claim": {"type": "string"},
+          "evidence_ref": {"$ref": "#/$defs/relPath"},
+          "status": {
+            "type": "string",
+            "enum": ["pending", "verified", "needs_evidence", "refuted"]
+          }
+        }
+      }
+    },
+    "equality_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["condition", "attainability", "limit_process"],
+      "properties": {
+        "condition": {"type": "string", "description": "取等条件方程组或极限路径。"},
+        "attainability": {
+          "type": "string",
+          "enum": ["interior_attainable", "boundary_asymptotic", "unattainable"],
+          "description": "等号达成性质：内部点取得、边界渐近趋近、或严格无等号。"
+        },
+        "limit_process": {
+          "type": "string",
+          "description": "极限过程严密证明或等号可达点代入验证。"
+        }
+      }
+    },
+    "motivation_trace": {
+      "type": "array",
+      "minItems": 1,
+      "description": "通法动机逆向还原（破局神来之笔的教学还原）。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "step_id",
+          "trigger_signal",
+          "construction_goal",
+          "verification",
+          "boundary_scope"
+        ],
+        "properties": {
+          "step_id": {"type": "string", "minLength": 1},
+          "trigger_signal": {
+            "type": "string",
+            "description": "解题触发信号：看到什么代数结构决定尝试此操作。"
+          },
+          "construction_goal": {
+            "type": "string",
+            "description": "构造目的：该变形旨在实现什么目标形态。"
+          },
+          "verification": {
+            "type": "string",
+            "description": "变形后核验：如何保证不等号方向与取等尺度。"
+          },
+          "boundary_scope": {
+            "type": "string",
+            "description": "通法适用边界：本技巧适用于何种变式，何时失效。"
+          }
+        }
+      }
+    },
+    "probe_reconciliation": {
+      "type": "array",
+      "minItems": 1,
+      "description": "与探针报告 (probe.json) 的对账记录。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["probe_id", "status", "explanation"],
+        "properties": {
+          "probe_id": {"type": "string", "minLength": 1},
+          "status": {
+            "type": "string",
+            "enum": ["consistent", "explains", "conflict"],
+            "description": "consistent 一致；explains 理论解释探针现象；conflict 存在矛盾（阻断冻结）。"
+          },
+          "explanation": {"type": "string"}
+        }
+      }
+    },
+    "subquestion_results": {
+      "type": "array",
+      "minItems": 1,
+      "description": "逐小问结果列表，每个小问包含 statement、core_method、result、proof_obligation_refs 等字段。",
+      "items": {
+        "$ref": "#/$defs/subquestionResult"
+      }
+    },
+    "verification_status": {
+      "type": "string",
+      "enum": ["pending", "verified", "needs_evidence", "refuted"]
+    },
+    "execution_metadata": {
+      "type": "object",
+      "description": "子 Agent 运行时溯源签名（与 probe/pitfall 的同名字段格式一致）。check_research.py 将核验 solver 的 subagent_conversation_id 与其他角色的互不相同。",
+      "additionalProperties": false,
+      "required": ["agent_role", "subagent_conversation_id"],
+      "properties": {
+        "agent_role": {
+          "type": "string",
+          "enum": ["probe", "solver", "math_audit"]
+        },
+        "role": {
+          "type": "string"
+        },
+        "subagent_conversation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "isolated_context_verified": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    },
+    "subquestionResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subquestion_id",
+        "statement",
+        "core_method",
+        "result",
+        "proof_obligation_refs",
+        "evidence_refs",
+        "verification_status"
+      ],
+      "properties": {
+        "subquestion_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "在题内唯一，建议使用 problem_id-序号格式。"
+        },
+        "statement": {
+          "type": "string",
+          "description": "该小问的原始要求。"
+        },
+        "core_method": {
+          "type": "string",
+          "description": "核心方法说明，作为研究和教师全解依据，不生成单独学生提示块。"
+        },
+        "result": {
+          "type": "string",
+          "description": "完整结论或分类。"
+        },
+        "detailed_solution": {
+          "type": "string",
+          "description": "本小问的完整严谨推导与证明正文（Markdown/LaTeX）。"
+        },
+        "proof_obligation_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string"},
+          "description": "绑定证明义务 ID 列表，每个小问至少绑定一个 proof obligation。"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/relPath"},
+          "description": "证据引用列表。"
+        },
+        "verification_status": {
+          "type": "string",
+          "enum": ["pending", "verified", "needs_evidence", "refuted"],
+          "description": "验证状态，不是 verified 时不得进入 brief/freeze。"
+        }
+      }
+    }
+  }
+}

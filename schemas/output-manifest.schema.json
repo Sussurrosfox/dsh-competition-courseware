@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v5.local/output-manifest.schema.json",
+  "title": "OutputManifest",
+  "description": "submit_output.py 写入 staging 时生成的输出清单（§4 / §5.3）。绑定 capability_id、input_digest、每个候选文件的 digest 与大小。accept_output.py 据此做 schema/策略/digest/所有权检查；promote_output.py 通过后原子提升到 canonical。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capability_id",
+    "run_id",
+    "attempt_id",
+    "agent_role",
+    "input_digest",
+    "files"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.4.0"},
+    "capability_id": {"type": "string", "pattern": "^cap-[A-Za-z0-9_-]+$"},
+    "run_id": {"type": "string", "pattern": "^run-[A-Za-z0-9_-]+$"},
+    "section_id": {"type": "string", "pattern": "^S[0-9]+$"},
+    "question_id": {"type": "string", "pattern": "^P?[0-9]+$"},
+    "attempt_id": {"type": "integer", "minimum": 1},
+    "agent_role": {
+      "type": "string",
+      "enum": ["section-writer", "student-task", "teacher-solution", "reviewer"]
+    },
+    "input_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "必须与 capability token 的 input_digest 一致，否则 STALE_INPUT"
+    },
+    "worker_session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "§9 Secure Skills Upgrade: broker-issued worker session ID for cross-stage tracking and deduplication"
+    },
+    "dispatch_receipt_ref": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "§9 Secure Skills Upgrade: digest of dispatch receipt this output is based on"
+    },
+    "result_receipt_ref": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "§9 Secure Skills Upgrade: result receipt reference from broker"
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "description": "候选输出文件清单；全部落在本代理 staging 前缀内",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["staging_path", "kind", "digest", "size_bytes"],
+        "properties": {
+          "staging_path": {"$ref": "#/$defs/stagingPath"},
+          "kind": {
+            "type": "string",
+            "enum": [
+              "student-task",
+              "teacher-solution",
+              "section-plan",
+              "review",
+              "issue"
+            ],
+            "description": "文件类型；用于选择对应 schema 校验"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "文件大小；网关校验实际字节与声明一致，并施加体积上限"
+          },
+          "target_canonical_ref": {
+            "$ref": "#/$defs/relPath",
+            "description": "提升目标 canonical 路径（仅 promote 阶段使用；模型不得指定越界路径）"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stagingPath": {
+      "type": "string",
+      "pattern": "^run/[A-Za-z0-9_-]+/sections/S[0-9]+/staging/",
+      "not": {"pattern": "(^|/)\\.\\./"}
+    },
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$",
+      "not": {"pattern": "(^|/)\\.\\./"}
+    }
+  }
+}

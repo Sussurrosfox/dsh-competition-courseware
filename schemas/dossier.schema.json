@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/dossier.schema.json",
+  "title": "ProblemDossier",
+  "description": "单题研究档案（research/problems/<problem_id>/dossier.json）：题面/证明引用、claims、证明义务、障碍研究与补充材料。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "problem_id",
+    "statement_ref",
+    "proof_refs",
+    "claims",
+    "proof_obligations",
+    "obstacles",
+    "supplements"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "problem_id": {"type": "string", "minLength": 1},
+    "statement_ref": {"$ref": "#/$defs/relPath"},
+    "probe_ref": {
+      "$ref": "#/$defs/relPath",
+      "description": "关联的数值探针报告 probe.json 引用。"
+    },
+    "pitfall_ref": {
+      "$ref": "#/$defs/relPath",
+      "description": "关联的死胡同与伪证明报告 pitfall.json 引用。"
+    },
+    "solution_ref": {
+      "$ref": "#/$defs/relPath",
+      "description": "关联的严谨证明报告 solution.json 引用。"
+    },
+    "motivation_ref": {
+      "$ref": "#/$defs/relPath",
+      "description": "关联的动机逆向还原文件引用。"
+    },
+    "proof_refs": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/relPath"},
+      "description": "已复核证明文件的引用（如 proof.md）。"
+    },
+    "claims": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/claim"},
+      "description": "分层断言记录：事实、推断、教学假设与课堂观察分开。"
+    },
+    "proof_obligations": {
+      "type": "array",
+      "description": "关键证明义务；进入交接包的数学内容必须闭合。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["obligation_id", "statement", "status", "evidence_refs"],
+        "properties": {
+          "obligation_id": {"type": "string", "minLength": 1},
+          "statement": {"type": "string"},
+          "status": {
+            "type": "string",
+            "enum": ["pending", "verified", "refuted", "unverified"]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/relPath"}
+          }
+        }
+      }
+    },
+    "obstacles": {
+      "type": "array",
+      "description": "学生障碍研究（R3 字段组）。无价值时允许留空数组。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "obstacle_id",
+          "blocking_evidence",
+          "repair_goal",
+          "teaching_intervention",
+          "evidence_kind"
+        ],
+        "properties": {
+          "obstacle_id": {"type": "string", "minLength": 1},
+          "student_knowledge_basis": {
+            "type": "string",
+            "description": "学生知识起点及依据；无依据时写明为假设。"
+          },
+          "likely_attempts": {
+            "type": "string",
+            "description": "学生可能从哪些已知信息出发。"
+          },
+          "written_behavior": {
+            "type": "string",
+            "description": "纸面表现：会写出的式子、图形或具体动作。"
+          },
+          "blocking_evidence": {
+            "type": "string",
+            "description": "受阻证据：哪个数值、约束或证明缺口使尝试停住。"
+          },
+          "repair_goal": {
+            "type": "string",
+            "description": "修复目标：下一步需要判断什么或补证什么。"
+          },
+          "teaching_intervention": {
+            "type": "string",
+            "description": "教学介入：一个问题、局部练习、实例、提示或示范。"
+          },
+          "pitfall_ref": {
+            "$ref": "#/$defs/relPath",
+            "description": "关联的死胡同分析引用。"
+          },
+          "observable_symptom": {
+            "type": "string",
+            "description": "可观察的学生受阻症状与草稿纸特征。"
+          },
+          "intervention_question": {
+            "type": "string",
+            "description": "教师现场一句话提问话术与介入切入点。"
+          },
+          "evidence_kind": {"$ref": "#/$defs/claimKind"},
+          "transferable_to": {
+            "type": "string",
+            "description": "可迁移内容：修复后可用于什么新情境。"
+          }
+        }
+      }
+    },
+    "supplements": {
+      "type": "array",
+      "description": "教研产物：为教本题新增的实例、误路、引理、练习与迁移变式；每项须有核验记录。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "supplement_id",
+          "parent_problem_id",
+          "purpose",
+          "content_ref",
+          "verification"
+        ],
+        "properties": {
+          "supplement_id": {"type": "string", "minLength": 1},
+          "parent_problem_id": {"type": "string", "minLength": 1},
+          "purpose": {"type": "string"},
+          "content_ref": {"$ref": "#/$defs/relPath"},
+          "verification": {
+            "type": "string",
+            "enum": ["pending", "verified", "refuted", "unverified"]
+          },
+          "review_refs": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/relPath"},
+            "description": "独立复核记录引用；新引理和变式进入正式交接前需独立复核。"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    },
+    "claimKind": {
+      "type": "string",
+      "enum": [
+        "math_fact",
+        "source_fact",
+        "teaching_inference",
+        "teaching_hypothesis",
+        "classroom_observation"
+      ],
+      "description": "math_fact 数学事实；source_fact 来源事实；teaching_inference 教学推断；teaching_hypothesis 待试教假设；classroom_observation 真实课堂观察（仅凭假设不可填写）。"
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "kind",
+        "statement",
+        "verification",
+        "evidence_refs",
+        "used_by"
+      ],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "kind": {"$ref": "#/$defs/claimKind"},
+        "statement": {"type": "string"},
+        "verification": {
+          "type": "string",
+          "enum": ["pending", "verified", "refuted", "unverified"],
+          "description": "验证引用、计算记录和审查结果，不用模型自报的置信度代替证据。"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/relPath"}
+        },
+        "used_by": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "使用该断言的 problem_id / block_id / task_id 等。"
+        }
+      }
+    }
+  }
+}

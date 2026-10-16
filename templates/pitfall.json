@@ -1,0 +1,41 @@
+{
+  "schema_version": "2.1.0",
+  "problem_id": "p01",
+  "probe_ref": "competition-research/templates/probe.json",
+  "attempts": [
+    {
+      "attempt_id": "attempt-01",
+      "category": "direction_inversion",
+      "description": "直接对各分母应用基本不等式 y+z >= 2*sqrt(yz)",
+      "first_invalid_step": "第 2 行：\\sqrt{x/(y+z)} <= \\sqrt{x/(2\\sqrt{yz})}",
+      "observable_stop_signal": "欲求 >= 下界，放缩后不等号方向却变为 <=",
+      "student_plausibility": "看到分母上是两数之和，高中生最容易顺手使用均值不等式化简为乘积"
+    },
+    {
+      "attempt_id": "attempt-02",
+      "category": "over_bounding",
+      "description": "直接柯西不等式或粗暴分母放大",
+      "first_invalid_step": "第 3 行对分式进行无权柯西放缩",
+      "observable_stop_signal": "放缩后常数为 \\sqrt{3} 约 1.732，严格劣于待证常数 2",
+      "student_plausibility": "希望一次性通分或求和，忽略了边界处的紧度需求"
+    }
+  ],
+  "pseudo_proof_ref": "competition-research/templates/pitfall.md",
+  "diagnoses": [
+    {
+      "diagnosis_id": "diag-01",
+      "attempt_id": "attempt-01",
+      "pathology": "分母放大导致整个正分式被缩小，放缩方向与目标下界倒挂",
+      "stop_signal": "在求下界时草稿纸上一旦在分母直接用均值放缩且分子无法抵消，立即停笔",
+      "forbidden_rules": [
+        "严禁在无倒数调整机制的情况下对分母直接应用均值不等式",
+        "不可在未考虑等号退化边界时强行通分"
+      ]
+    }
+  ],
+  "forbidden_feature_refs": [
+    "feature_direct_denominator_amgm",
+    "feature_cauchy_overbound"
+  ],
+  "verification_status": "verified"
+}

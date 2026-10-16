@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/shared-defs.schema.json",
+  "title": "SharedDefs",
+  "description": "公共定义的规范出处：relPath、claim、各共享枚举与 SHA-256 摘要格式。各契约 schema 将所需定义内联在自身 $defs 中（自包含、无需跨文件解析）；本文件是这些内联定义必须与之保持一致的权威版本，供检查脚本与测试引用。",
+  "type": "object",
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$",
+      "description": "项目相对路径，统一使用正斜杠，不得含反斜杠，不得越出项目根。"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 十六进制摘要，由 scripts/contract.py 统一计算。"
+    },
+    "claimKind": {
+      "type": "string",
+      "enum": [
+        "math_fact",
+        "source_fact",
+        "teaching_inference",
+        "teaching_hypothesis",
+        "classroom_observation"
+      ]
+    },
+    "verification": {
+      "type": "string",
+      "enum": ["pending", "verified", "refuted", "unverified"]
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "kind",
+        "statement",
+        "verification",
+        "evidence_refs",
+        "used_by"
+      ],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "kind": {"$ref": "#/$defs/claimKind"},
+        "statement": {"type": "string"},
+        "verification": {"$ref": "#/$defs/verification"},
+        "evidence_refs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/relPath"}
+        },
+        "used_by": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "lessonMode": {
+      "type": "string",
+      "enum": ["guided"]
+    },
+    "revealLevel": {
+      "type": "string",
+      "enum": ["L0", "L1", "L2"]
+    },
+    "audience": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "enum": ["student", "teacher"]}
+    },
+    "deliveryChannel": {
+      "type": "string",
+      "enum": ["in_main", "separate_hint", "separate_review", "teacher_only"]
+    },
+    "runState": {
+      "type": "string",
+      "enum": [
+        "R_DRAFT",
+        "R_SHORTLISTED",
+        "R_STUDIED",
+        "BRIEF_FROZEN",
+        "T_DRAFT",
+        "T_BUILT",
+        "T_REVIEWED",
+        "DELIVERABLE"
+      ]
+    },
+    "reviewConclusion": {
+      "type": "string",
+      "enum": ["PASS", "REVISE", "NEEDS_EVIDENCE"]
+    },
+    "checkStatus": {
+      "type": "string",
+      "enum": ["pass", "fail", "review", "error"],
+      "description": "脚本检查状态，与审查结论 PASS/REVISE/NEEDS_EVIDENCE 分开。"
+    },
+    "issueRoute": {
+      "type": "string",
+      "enum": ["RESEARCH_BACK", "TEACHING_FIX", "LAYOUT_FIX"]
+    },
+    "issueStatus": {
+      "type": "string",
+      "enum": ["open", "accepted", "resolved", "rejected"]
+    },
+    "taskConclusion": {
+      "type": "string",
+      "enum": ["completed", "needs_evidence", "no_useful_result", "failed"]
+    }
+  }
+}

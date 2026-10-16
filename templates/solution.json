@@ -1,0 +1,47 @@
+{
+  "schema_version": "2.1.0",
+  "problem_id": "p01",
+  "statement_ref": "sources/problems/p01.md",
+  "proof_ref": "competition-research/templates/solution.md",
+  "proof_obligations": [
+    {
+      "obligation_id": "obl-01",
+      "claim": "对任意正实数 x, y, z 恒有 \\sum_{cyc} \\sqrt{x/(y+z)} >= 2",
+      "evidence_ref": "competition-research/templates/solution.md",
+      "status": "verified"
+    },
+    {
+      "obligation_id": "obl-02",
+      "claim": "等号在内部正实数域取不到，在 x -> 0+, y = z 处极限达到 2",
+      "evidence_ref": "competition-research/templates/solution.md",
+      "status": "verified"
+    }
+  ],
+  "equality_boundary": {
+    "condition": "x -> 0+, y = z",
+    "attainability": "boundary_asymptotic",
+    "limit_process": "\\lim_{x \\to 0^+} (\\sqrt{x/2y} + 2\\sqrt{y/(y+x)}) = 0 + 2 = 2"
+  },
+  "motivation_trace": [
+    {
+      "step_id": "step-01",
+      "trigger_signal": "分母含加法根号，直接均值不等式导致方向倒挂",
+      "construction_goal": "分子分母同乘 \\sqrt{x}，将根号转化为乘积结构",
+      "verification": "分母 \\sqrt{x(y+z)} <= (x+y+z)/2，倒数放大后整个分式被缩小，方向正确",
+      "boundary_scope": "适用于齐次轮换对称带根号分式放缩"
+    }
+  ],
+  "probe_reconciliation": [
+    {
+      "probe_id": "probe-symmetry",
+      "status": "consistent",
+      "explanation": "探针显示对称中心为 2.12，大于 2，理论证明证实内部确实不取等号"
+    },
+    {
+      "probe_id": "probe-boundary",
+      "status": "explains",
+      "explanation": "理论证明采用退化极限严格说明 2 是下确界，与探针边界测量完全一致"
+    }
+  ],
+  "verification_status": "verified"
+}

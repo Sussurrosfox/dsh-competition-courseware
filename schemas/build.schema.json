@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/build.schema.json",
+  "title": "BuildRecord",
+  "description": "构建记录（teaching/build/ 下）：绑定 brief 与生产内容摘要，记录各视图产物、构建命令与结果。跳过构建的完整发布不可宣称成功。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "brief_digest",
+    "production_digest",
+    "artifacts",
+    "commands",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "brief_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "构建所依据的冻结 brief 摘要。"
+    },
+    "production_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "由 contract.compute_production_digest 计算：materials、正文、配置、模板、装配顺序和资源。"
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "视图/产物摘要。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["view_id", "output_ref", "output_digest"],
+        "properties": {
+          "view_id": {"type": "string", "minLength": 1},
+          "output_ref": {"$ref": "#/$defs/relPath"},
+          "output_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "description": "构建命令与日志引用；同一工作目录构建串行。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "exit_code", "log_ref"],
+        "properties": {
+          "command": {"type": "string"},
+          "exit_code": {"type": "integer"},
+          "log_ref": {"$ref": "#/$defs/relPath"}
+        }
+      }
+    },
+    "result": {
+      "type": "string",
+      "enum": ["success", "failure"]
+    },
+    "built_at": {"type": "string"}
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

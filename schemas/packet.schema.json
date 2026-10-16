@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/packet.schema.json",
+  "title": "Packet",
+  "description": "broker 唯一输入读取入口（§4 / §5.2）产生的紧凑 JSON 输入包（契约 2.4.0）。section writer 只收本 section；student writer 只收一题；teacher writer 才收该题解答证据。packet 用 digest 绑定，模型不能扩展读取范围。solution/教师备注/其他题文本不在 student packet 中。目标体积 ≤6KB。v2.4.0：允许输入由 frozen reveal plan 白名单计算（allowed_source_refs），input_digests 非空，size_bytes 必填，全部 packet 绑定 run_id 与 brief。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "packet_kind",
+    "run_id",
+    "brief_id",
+    "brief_revision",
+    "input_digests",
+    "allowed_source_refs",
+    "output_fields_white_list",
+    "size_bytes"
+  ],
+  "properties": {
+    "schema_version": {"enum": ["2.4.0", "2.5.0"]},
+    "packet_kind": {
+      "type": "string",
+      "enum": ["student-task", "section-writer", "teacher-solution", "review"],
+      "description": "packet 类型；决定可见内容范围"
+    },
+    "run_id": {"type": "string", "pattern": "^run-[A-Za-z0-9_-]+$"},
+    "brief_id": {"type": "string", "minLength": 1},
+    "brief_revision": {"type": "integer", "minimum": 1},
+    "question_id": {
+      "type": "string",
+      "pattern": "^P?[0-9]+$",
+      "description": "题级 packet 的问题 ID"
+    },
+    "task_id": {"type": "string", "minLength": 1},
+    "section_id": {
+      "type": "string",
+      "pattern": "^S[0-9]+$",
+      "description": "section-writer packet 所属 section"
+    },
+    "question_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^P?[0-9]+$"}
+    },
+    "problem_stem": {"type": "string", "description": "题面（student packet 允许）"},
+    "solution_skeleton": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "obligation_count", "obligations", "target_subquestion_count"],
+      "description": "解法骨架（机械派生 body 字段，非输入源；solution.json 绝不进入 allowed_source_refs / input_digests）。由 make_small_packet.py 从冻结 solution.json 的 proof_obligations 派生；派生失败时整体省略（packet 仍合法）。",
+      "properties": {
+        "source": {"const": "derived"},
+        "obligation_count": {"type": "integer", "minimum": 1},
+        "obligations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["obligation_id", "order", "signpost", "terminal"],
+            "properties": {
+              "obligation_id": {"type": "string", "minLength": 1},
+              "order": {"type": "integer", "minimum": 1},
+              "signpost": {"type": "string"},
+              "terminal": {"type": "boolean"}
+            }
+          }
+        },
+        "target_subquestion_count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "probe_evidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "探针证据（不含答案级信息）"
+    },
+    "relevant_questions": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "section packet 内本 section 的题目规划"
+    },
+    "lesson_mode": {"type": "string", "enum": ["guided"]},
+    "input_digests": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "项目相对路径 -> SHA-256，由 broker 从实际读取文件重算；绑定 packet 实际读取的输入版本",
+      "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    },
+    "allowed_source_refs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1},
+      "description": "由 frozen reveal plan 计算的输入白名单；必须与 input_digests 的键集合一致"
+    },
+    "forbidden_fields": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "输出禁止字段（如 solution/answer/proof 语义字段）"
+    },
+    "output_fields_white_list": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1},
+      "description": "输出字段白名单；模型只能写这些字段"
+    },
+    "packet_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "packet 自身摘要（不含 size_bytes 与 packet_digest 字段计算）；由 broker 重算核对"
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "packet 字节数（硬约束 ≤6144）"
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"packet_kind": {"const": "student-task"}}},
+      "then": {
+        "required": ["question_id", "task_id", "problem_stem"],
+        "description": "student packet 必须只含题面与探针证据，禁止 solution 字段；可选携带 solution_skeleton（机械派生，非输入源）"
+      }
+    },
+    {
+      "if": {"properties": {"packet_kind": {"const": "section-writer"}}},
+      "then": {"required": ["section_id", "question_ids"]}
+    },
+    {
+      "if": {"properties": {"packet_kind": {"const": "teacher-solution"}}},
+      "then": {"required": ["question_id"]}
+    }
+  ]
+}

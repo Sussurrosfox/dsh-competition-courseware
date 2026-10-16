@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/run.schema.json",
+  "title": "RunRecord",
+  "description": "一次教研/教学运行（run.json）的机器记录：课程约束、输入清单、假设与当前状态。状态机见 references/handoff.md。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "course_constraints",
+    "source_manifest",
+    "assumptions",
+    "current_state"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "契约版本，语义化版本号，当前为 2.0.0。"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "course_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goals", "student_prerequisites", "total_time_minutes"],
+      "properties": {
+        "goals": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "课程目标：要训练的策略判断与证明能力。"
+        },
+        "student_prerequisites": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["item", "basis"],
+            "properties": {
+              "item": {"type": "string"},
+              "basis": {
+                "type": "string",
+                "enum": ["verified", "assumed"],
+                "description": "verified 表示有已教证据；assumed 表示明确假设。"
+              },
+              "note": {"type": "string"}
+            }
+          }
+        },
+        "total_time_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "全课总时间预算（分钟）。"
+        },
+        "output_use": {
+          "type": "string",
+          "description": "输出用途（如课堂学案、讲座材料）。"
+        }
+      }
+    },
+    "source_manifest": {
+      "type": "array",
+      "description": "输入快照或可验证路径清单；每项为授权范围内的输入文件。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "kind"],
+        "properties": {
+          "path": {"$ref": "#/$defs/relPath"},
+          "kind": {
+            "type": "string",
+            "enum": ["problem", "solution", "knowledge", "notes", "other"]
+          },
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "缺少的课程信息写成的明确假设。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["assumption_id", "statement"],
+        "properties": {
+          "assumption_id": {"type": "string", "minLength": 1},
+          "statement": {"type": "string"},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "current_state": {
+      "type": "string",
+      "description": "状态机当前状态；RESEARCH_BACK 不是状态，是 issue 的 route。",
+      "enum": [
+        "R_DRAFT",
+        "R_SHORTLISTED",
+        "R_STUDIED",
+        "BRIEF_FROZEN",
+        "T_DRAFT",
+        "T_BUILT",
+        "T_REVIEWED",
+        "DELIVERABLE"
+      ]
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$",
+      "description": "项目相对路径，统一使用正斜杠，不得含反斜杠。"
+    }
+  }
+}

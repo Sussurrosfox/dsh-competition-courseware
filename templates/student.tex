@@ -1,0 +1,19 @@
+% -*- coding: utf-8 -*-
+% =============================================================================
+% student_initial 视图编译入口（首轮发放学生学案）
+% 装配内容：teaching/materials.json 中 views 含 student_initial 的块
+%           （按契约只能是 available_after=initial 的 L0 块，
+%           check_teaching.py 在构建前拦下违规块）。
+% 版面与排版规范：
+%   1. 纸张与分栏：大8开横版（420mm x 285mm）双栏作业纸排版（columns: 2）。
+%   2. 题目排版格式：严格要求「每题一栏均匀排布」。
+%      - 每道竞赛代表题（含题干、3-6 个探究子问及作答留白）独立占用一整栏；
+%      - 切片装配（main.tex）中在各题之间显式加入 \pdColumnBreak 强制分栏；
+%      - 每题探究设问与 \ansspace 留白高度总和应均匀充盈单栏版心（约 200-220mm），
+%        确保整套学案两页四栏或四页八栏整齐对齐，杜绝同栏挤入多题或题内随意跨栏。
+% 编译特性：剥离 solution/teacherNote，保留独立作答书写留白，
+%           页眉呈现姓名学号填写区。
+% 编译命令：xelatex student.tex（或 scripts/build.py 按 views 顺序统一构建）
+% =============================================================================
+\def\pdCurrentView{student_initial}
+\input{main.tex}

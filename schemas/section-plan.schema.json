@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v5.local/section-plan.schema.json",
+  "title": "SectionPlan",
+  "description": "Section writer 输出（teaching/sections/Sx/section-plan.json）。§5.2：每个 section 一个独立计划，只包含该 section 的题目，不得有全课计划。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "brief_id",
+    "section_id",
+    "section_order",
+    "question_ids",
+    "questions",
+    "execution_metadata",
+    "verification_status"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "brief_id": {"type": "string", "minLength": 1},
+    "section_id": {
+      "type": "string",
+      "minLength": 2,
+      "pattern": "^S[0-9]+$",
+      "description": "Section ID，如 S1、S2"
+    },
+    "section_order": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Section 在全课中的顺序"
+    },
+    "question_ids": {
+      "type": "array",
+      "minItems": 1,
+      "description": "本 section 负责的所有 active question_id",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 1,
+      "description": "本 section 中每个题目的规划映射",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "question_id",
+          "task_id",
+          "subquestion_ids",
+          "student_block_ref",
+          "teacher_block_ref"
+        ],
+        "properties": {
+          "question_id": {"type": "string", "minLength": 1},
+          "task_id": {"type": "string", "minLength": 1},
+          "subquestion_ids": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 6,
+            "description": "小问 ID 列表，必须 3-6 个",
+            "items": {"type": "string", "minLength": 1}
+          },
+          "student_block_ref": {"$ref": "#/$defs/relPath"},
+          "teacher_block_ref": {"$ref": "#/$defs/relPath"}
+        }
+      }
+    },
+    "execution_metadata": {
+      "type": "object",
+      "description": "Section writer 运行时溯源签名",
+      "additionalProperties": false,
+      "required": ["agent_role", "section_id", "subagent_conversation_id"],
+      "properties": {
+        "agent_role": {
+          "type": "string",
+          "enum": ["section-writer"]
+        },
+        "section_id": {"type": "string", "minLength": 2, "pattern": "^S[0-9]+$"},
+        "subagent_conversation_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "verification_status": {
+      "type": "string",
+      "enum": ["pending", "verified", "needs_revision", "refuted"]
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

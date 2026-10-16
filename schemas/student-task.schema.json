@@ -1,0 +1,157 @@
+{
+  "$schema": "http://json-schema.org/draft-2020-12/schema#",
+  "title": "Student Task Schema",
+  "description": "学生任务中间契约（契约 2.4.0），用于小模型生成，不包含 TeX 排版代码。只输出 JSON，不包含 Markdown 围栏。每题独立 task，渲染为大题（1. 2. 3. 等）；每题拆为 3-6 个小问（(1) (2) (3) 等），由 LaTeX enumerate 控制。小模型只负责题干与小问提示问题及留白，已删除提示（hint）与应留证据（expected_evidence）。脚本会自动渲染每问后的\\ansspace 留白。v2.4.0：新增 run 绑定字段 run_id / brief_id / brief_revision / packet_digest / receipt_ref；每题唯一规范文件 teaching/generated/<qid>-student-task.json，由 broker 校验与提升。G6.3：学生任务契约禁止任何解答字段，subquestions[].solution 已屏蔽（additionalProperties: false），解答属教师侧产物。",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "enum": ["2.4.0", "2.5.0"]
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_-]+$",
+      "description": "broker create_run 签发的本轮 run ID；与 receipt 绑定"
+    },
+    "question_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "题目 ID，如 P441"
+    },
+    "section_id": {
+      "type": "string",
+      "pattern": "^S[0-9]+$",
+      "description": "Section ID，如 S1、S2"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "任务 ID；规范值为 task-<question_id>"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 30
+    },
+    "stem": {
+      "type": "string",
+      "minLength": 1,
+      "description": "题干文本，可包含 $...$ 行内数学公式"
+    },
+    "subquestions": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 6,
+      "description": "小问对象数组，必须 3-6 个，每题做成一个大题（1. 2. 3.），各问做成小问（(1) (2) (3)），由 enumerate 控制，每问独立留白",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["subquestion_id", "prompt", "answer_space_mm"],
+        "properties": {
+          "subquestion_id": {"type": "string", "minLength": 1, "description": "小问唯一 ID，题内唯一"},
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "小问提示问题或可执行动作，不得是解题讲义"
+          },
+          "hint": {
+            "type": "string",
+            "maxLength": 45,
+            "description": "中性提示，最多两句，最多 45 个汉字，不能给答案级信息"
+          },
+          "hint_level": {
+            "type": "string",
+            "enum": ["observation", "direction", "verification"],
+            "description": "提示强度分级：observation（观察）/ direction（方向）/ verification（验证）"
+          },
+          "expected_evidence": {
+            "type": "string",
+            "minLength": 1,
+            "description": "学生应留下的证据类型描述，不得包含具体答案文本"
+          },
+          "answer_space_mm": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 60,
+            "description": "单问留白毫米数"
+          },
+          "obligation_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+            "description": "绑定 packet.solution_skeleton 的证明义务 ID；packet 含骨架时每个小问必填，全部小问并集必须覆盖全部义务，末位小问必须绑定 terminal 义务"
+          },
+          "reveal": {
+            "type": "string",
+            "enum": ["initial", "on_demand"],
+            "description": "揭示时机",
+            "default": "on_demand"
+          }
+        }
+      }
+    },
+    "level": {
+      "enum": ["L0", "L1", "L2"]
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "description": "必需非空，引用源材料列表；必须落在 packet 的 allowed_source_refs 白名单内"
+    },
+    "evidence": {
+      "type": ["array", "null"],
+      "items": {"type": "string", "minLength": 1},
+      "minItems": 1,
+      "description": "Legacy 兼容字段，新格式请用 subquestions[].expected_evidence。新版本可选填或为 null"
+    },
+    "brief_id": {"type": "string", "minLength": 1},
+    "brief_revision": {"type": "integer", "minimum": 1},
+    "packet_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "broker 签发 packet 的 SHA-256；与 receipt 绑定"
+    },
+    "receipt_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "broker 签发的 receipt 引用（staging/<run_id>/receipts/<task_id>.json）"
+    },
+    "execution_metadata": {
+      "type": "object",
+      "description": "子 Agent 运行时溯源签名。注意：UUID 只是索引，真实性由 broker 签名 receipt 与 digest 决定。",
+      "additionalProperties": false,
+      "required": ["agent_role", "subagent_conversation_id", "worker_session_id"],
+      "properties": {
+        "agent_role": {
+          "type": "string",
+          "enum": ["student-task", "teacher-solution", "section-writer"],
+          "description": "执行本任务的子 Agent 角色标识"
+        },
+        "subagent_conversation_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "RFC 4122 UUID 格式的 invoke_subagent 会话 ID（仅作索引，不作真实性证明）"
+        },
+        "worker_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "broker 签发的 worker session ID，用于跨阶段追踪和去重验证"
+        },
+        "dispatch_receipt_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "引用的 dispatch receipt 哈希，证明有真实派发记录"
+        },
+        "isolated_context_verified": {
+          "type": "boolean",
+          "default": false,
+          "description": "子 Agent 自陈其上下文是否经过隔离（未接触其他角色的私有内容）"
+        }
+      }
+    }
+  },
+  "required": ["schema_version", "run_id", "question_id", "section_id", "task_id", "title", "stem", "subquestions", "level", "source_refs", "brief_id", "brief_revision", "packet_digest", "receipt_ref", "execution_metadata"],
+  "additionalProperties": false
+}

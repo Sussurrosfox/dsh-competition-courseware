@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/probe.schema.json",
+  "title": "ProbeReport",
+  "description": "小样本实验与猜想探针输出（research/problems/<problem_id>/probe.json）：多维度数值测绘、等号可达性与学生破冰问题。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "problem_id",
+    "input_refs",
+    "domain",
+    "probes",
+    "conjectures",
+    "student_warmup",
+    "verification_status",
+    "task_id",
+    "execution_metadata"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "problem_id": {"type": "string", "minLength": 1},
+    "input_refs": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/relPath"},
+      "description": "输入来源文件引用（如 sources/problems/<problem_id>.md）。"
+    },
+    "domain": {
+      "type": "string",
+      "description": "题目变量定义域与约束描述。"
+    },
+    "probes": {
+      "type": "array",
+      "description": "探针动作执行记录列表。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "probe_id",
+          "kind",
+          "path",
+          "exact_expression",
+          "numeric_value",
+          "comparison",
+          "equality_status",
+          "evidence_note"
+        ],
+        "properties": {
+          "probe_id": {"type": "string", "minLength": 1},
+          "kind": {
+            "type": "string",
+            "enum": ["symmetry", "boundary", "low_dimension", "perturbation"]
+          },
+          "path": {
+            "type": "string",
+            "description": "代入或极限路径（如 x=y=z=1 或 x->0+, y=1, z=1）。"
+          },
+          "exact_expression": {
+            "type": "string",
+            "description": "代入后的精确代数化简式。"
+          },
+          "numeric_value": {
+            "type": "string",
+            "description": "数值或极限值的字符串表达（浮点数强制存为字符串以避免精度浮动影响摘要）。"
+          },
+          "comparison": {
+            "type": "string",
+            "description": "与目标常数或边界的比较结果（如 matches_bound, strictly_greater, strictly_less）。"
+          },
+          "equality_status": {
+            "type": "string",
+            "enum": ["attainable", "asymptotic_boundary", "unattainable", "unverified"],
+            "description": "等号可达性诊断。"
+          },
+          "evidence_note": {
+            "type": "string",
+            "description": "试算证据与认知观察说明。"
+          }
+        }
+      }
+    },
+    "conjectures": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "基于探针事实形成的猜想（只能作为探索线索，不能充当形式证明）。"
+    },
+    "student_warmup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question", "test_points", "expected_phenomenon"],
+      "properties": {
+        "question": {"type": "string"},
+        "test_points": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "expected_phenomenon": {"type": "string"}
+      }
+    },
+    "verification_status": {
+      "type": "string",
+      "enum": ["pending", "verified", "needs_evidence", "refuted"]
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "执行该探针任务的 task_id。"
+    },
+    "execution_metadata": {
+      "type": "object",
+      "description": "子 Agent 运行时溯源签名，由执行本任务的子 Agent 填写。check_research.py 将核验四件套的 subagent_conversation_id 互不相同（认知隔离原则）。",
+      "additionalProperties": false,
+      "required": ["agent_role", "subagent_conversation_id"],
+      "properties": {
+        "agent_role": {
+          "type": "string",
+          "enum": ["probe", "pitfall", "solver", "math_audit"],
+          "description": "执行本任务的子 Agent 角色标识。"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["probe", "pitfall", "solver", "math_audit"],
+          "description": "执行本任务的子 Agent 角色标识（兼容别名）。"
+        },
+        "subagent_conversation_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "执行本任务的子 Agent 会话 ID（由 invoke_subagent 返回）。主进程代劳时无法提供真实 ID，用于门禁识别代劳行为。"
+        },
+        "isolated_context_verified": {
+          "type": "boolean",
+          "description": "可选：子 Agent 自陈其上下文是否经过隔离（未接触其他角色的私有内容）。"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

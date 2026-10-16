@@ -1,0 +1,39 @@
+% -*- coding: utf-8 -*-
+% =============================================================================
+% 竞赛少题深研学案/大8开作业纸 —— 主骨架（v2 单源多视图版）
+% 架构说明：
+%   header.tex        导言区、宏定义（含 \ViewBlock 视图条件装配）、标题区、
+%                     栏环境宏（\pdBeginColumns/\pdEndColumns，栏数为 1 时不进入 multicols）
+%   sec*.tex          各竞赛代表题装配切片：以 % block: <block_id> 注释 +
+%                     \ViewBlock{<views>}{...} 按视图装配 teaching/content/ 内容块
+%                     （sec1.tex 即装配写作层；题面/任务/证明正文在
+%                       teaching/content/<block_id>.tex，学生任务正文由
+%                       broker render_task 从 student-task.json 渲染）
+%   footer.tex        栏环境结束、LastPage 锚点、\end{document}
+% 参数化：版面与文案参数均由 config.yaml 生成，见 scripts/gen_config.py。
+% 编译方式：通过 student.tex / teacher.tex / hint-<pid>.tex / review-<pid>.tex
+%           入口文件执行编译，或使用 scripts/build.py 按 views 顺序统一构建。
+% =============================================================================
+
+\input{header.tex}
+
+\begin{document}
+\begin{center}
+  {\Huge \textbf{\ifdefined\pdViewTitle\pdViewTitle\else\pdMainTitle\fi}}
+\end{center}
+\raggedcolumns
+\pdBeginColumns
+
+% 引入各竞赛代表题装配切片 (推荐使用 \begin{probchain} 自动连续编号环境)
+% 【排版核心规范】：student.tex 严格实行「每题一栏均匀排布」。
+% 切片之间显式使用 \pdColumnBreak 强制分栏，在 student_initial 双栏中一题一栏、均匀对称；
+% 在 teacher.tex（单栏）及学生解答版中 \pdColumnBreak 自动退化为空宏，保持流式排版。
+\input{sec1.tex}
+\pdColumnBreak
+\input{sec2.tex}
+\pdColumnBreak
+\input{sec3.tex}
+\pdColumnBreak
+\input{sec4.tex}
+
+\input{footer.tex}

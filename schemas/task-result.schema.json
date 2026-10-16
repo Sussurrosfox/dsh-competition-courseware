@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/task-result.schema.json",
+  "title": "TaskResult",
+  "description": "子 flash agent 任务的统一返回格式（§3.4 升级）。子任务只提交候选结论：不能自写 BRIEF_FROZEN 状态，也不能自标正式 verified；主 agent 接收/拒收后才写正式记录。failed 是执行状态，不能冒充无教学价值。主 Agent 只能把 completed 且通过对应脚本的结果合并；needs_evidence 自动进入待办队列；refuted 必须阻止冻结。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "role",
+    "run_id",
+    "packet_digest",
+    "receipt_ref",
+    "input_digests",
+    "outputs",
+    "candidate_conclusion",
+    "issues"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "task_id": {"type": "string", "minLength": 1},
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_-]+$",
+      "description": "broker create_run 签发的本轮 run ID；与 receipt 绑定。"
+    },
+    "packet_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "本任务实际使用 packet 的 SHA-256；与 receipt 绑定。"
+    },
+    "receipt_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "broker 签发的 receipt 引用；submit_task 验签通过才接受。"
+    },
+    "role": {
+      "type": "string",
+      "minLength": 1,
+      "description": "任务角色（如 probe、pitfall、solver、architect、math-audit、route-study、obstacle-study、supplement-study、student-task、teacher-material、student-review 等）。段 C：section-writer 专用角色，禁止任意 role。"
+    },
+    "stage": {
+      "type": "string",
+      "pattern": "^(R0|R1|R2|R3|R4|T0|T1|T2|T3|T4|STAGING)$",
+      "description": "任务所处生命周期阶段（如 R0, R1, R2, R3, R4, T0, T1, T2, T3, T4, STAGING）。"
+    },
+    "problem_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1,
+      "description": "关联的题目 ID 列表。"
+    },
+    "allowed_write_paths": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/relPath"},
+      "description": "允许该任务写入的文件路径白名单（只能落在 staging/<run_id>/<task_id>/）。"
+    },
+    "input_digests": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "输入摘要：项目相对路径 -> SHA-256，由 broker 从实际读取文件重算；不得为空。",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "description": "输出路径与摘要；子任务只写独占的任务产物。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "summary"],
+        "properties": {
+          "path": {"$ref": "#/$defs/relPath"},
+          "digest": {
+            "type": ["string", "null"],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "summary": {"type": "string"}
+        }
+      }
+    },
+    "candidate_conclusion": {
+      "type": "string",
+      "enum": ["completed", "needs_evidence", "no_useful_result", "failed"],
+      "description": "候选结论：completed 完成；needs_evidence 证据不足（自动进入待办队列）；no_useful_result 无有用结果（须说明理由）；failed 执行失败（超时、工具不可用等）。"
+    },
+    "conclusion_reason": {
+      "type": "string",
+      "description": "结论理由，no_useful_result 与 failed 必填。"
+    },
+    "issues": {
+      "type": "array",
+      "description": "发现的问题（issue_id 或内联描述）与证据引用。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description", "evidence_refs"],
+        "properties": {
+          "issue_id": {"type": "string"},
+          "description": {"type": "string"},
+          "evidence_refs": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/relPath"}
+          }
+        }
+      }
+    },
+    "claims_supported": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "§3.4 统一协议：本任务已支撑的教学/数学声明 ID 列表（由主 Agent 合并到教研档案）。"
+    },
+    "claims_unresolved": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "§3.4 统一协议：本任务尚未解决的声明 ID 列表（主 Agent 按 needs_evidence 处理）。"
+    },
+    "next_action": {
+      "type": "string",
+      "enum": ["merge", "queue_evidence", "block_freeze", "discard", "retry"],
+      "description": "§3.4 统一协议：建议主 Agent 对本结果执行的动作。completed→merge；needs_evidence→queue_evidence；no_useful_result→discard；failed→retry 或 discard；refuted→block_freeze。"
+    },
+    "validator_report": {
+      "type": ["string", "null"],
+      "description": "§3.4 统一协议：对应脚本（如 check_research.py）的验证报告路径；主 Agent 仅在此字段非空且脚本通过时才执行 merge。"
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

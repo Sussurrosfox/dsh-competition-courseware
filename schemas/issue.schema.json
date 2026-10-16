@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/issue.schema.json",
+  "title": "IssueRecord",
+  "description": "问题与返修请求记录（issues/ 下每份一个文件）。RESEARCH_BACK 是带证据的返修请求，不是第三个生产阶段；主 agent 接受后才开启研究新 revision。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "issue_id",
+    "route",
+    "problem_ids",
+    "evidence_refs",
+    "reason",
+    "requested_change",
+    "resume_condition",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "issue_id": {"type": "string", "minLength": 1},
+    "route": {
+      "type": "string",
+      "enum": ["RESEARCH_BACK", "TEACHING_FIX", "LAYOUT_FIX"],
+      "description": "回退目标路由：数学/设计问题 RESEARCH_BACK（回 R1—R4）；措辞实现问题 TEACHING_FIX（回 T1）；版面构建问题 LAYOUT_FIX（回 T2）。回退表见 meet.md 第六节。"
+    },
+    "problem_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "受影响题目；跨题问题可为空数组并在 affected_ids 中说明。"
+    },
+    "brief_id": {"type": "string"},
+    "brief_revision": {"type": "integer", "minimum": 1},
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/relPath"},
+      "description": "证据引用；无证据的返修请求不应被接受。"
+    },
+    "affected_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "受影响 ID 列表（block_id / task_id / claim_id 等），由依赖关系定位。"
+    },
+    "reason": {"type": "string"},
+    "requested_change": {"type": "string"},
+    "resume_condition": {
+      "type": "string",
+      "description": "复验/恢复条件，如\"相关数学通过复核，新 brief 冻结\"。"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "accepted", "resolved", "rejected"]
+    },
+    "resolution_log": {
+      "type": "array",
+      "description": "处理记录：逐项处置与复验引用，不能用一份空泛文件概括放行。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["actor", "action", "evidence_refs"],
+        "properties": {
+          "actor": {"type": "string"},
+          "action": {"type": "string"},
+          "evidence_refs": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/relPath"}
+          },
+          "timestamp": {"type": "string"}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

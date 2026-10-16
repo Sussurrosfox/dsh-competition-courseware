@@ -1,0 +1,449 @@
+% -*- coding: utf-8 -*-
+% =============================================================================
+% header.tex —— 竞赛少题深研学案（v2 单源多视图版）：导言区 + 宏定义 + 标题区 + 双栏开始
+% 架构: <入口>.tex -> main.tex -> [header.tex, sec*.tex, footer.tex]
+%       （sec1.tex 等切片即内容块装配写作层，按 materials.json 块属性装配）
+% 入口: student.tex（student_initial 视图）/ teacher.tex（teacher 视图）/
+%       hint-<pid>.tex / review-<pid>.tex（gen_config.py 按 config.yaml views 生成，
+%       无对应内容块时不生成空入口）。
+% 参数: 全部版面与文案参数来自 config-class.tex / config.tex
+%       （由 scripts/gen_config.py 依据 config.yaml 自动生成，勿手改）。
+% =============================================================================
+
+% ---- 文档类选项（字号等，须在 \documentclass 之前注入） ----
+\input{config-class.tex}
+\documentclass{ctexart}
+
+% ---- 版面几何与文本参数 + 视图开关（config.yaml 自动生成） ----
+% config.tex 依据入口文件声明的 \pdCurrentView 定义 \pdView@<视图ID> 开关；
+% 未声明 \pdCurrentView 的旧入口（兼容模式）不定义任何视图开关。
+\input{config.tex}
+
+% ---- 当前视图名（写入日志 SUMMARY，供 build.py 逐视图核对） ----
+\ifdefined\pdCurrentView
+  \providecommand{\pdCurrentViewName}{}%
+  \renewcommand{\pdCurrentViewName}{\pdCurrentView}%
+\else
+  \ifdefined\TeacherVersion
+    \newcommand{\pdCurrentViewName}{teacher}%
+  \else
+    \newcommand{\pdCurrentViewName}{student}%
+  \fi
+\fi
+
+% ---- 教师版版面覆盖：A4 竖版、单栏 ----
+% 学生版沿用 config.yaml 的大8开横版双栏；教师版供案头翻阅，固定为 A4 竖版单栏。
+% \geometry 在导言区可重复调用并覆盖先前设置；\pdColumns=1 时 \pdBeginColumns 不产生 multicols 环境。
+\ifdefined\TeacherVersion
+  \geometry{a4paper, portrait, top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm, headheight=25pt}
+  \renewcommand{\pdColumns}{1}
+\fi
+
+% ---- 学生解答版版面覆盖：A4 竖版、单栏 ----
+\ifdefined\StudentSolutionVersion
+  \geometry{a4paper, portrait, top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm, headheight=25pt}
+  \renewcommand{\pdColumns}{1}
+\fi
+
+% ---- 独立提示/复盘页（separate_hint / separate_review 渠道入口）：A4 竖版单栏 ----
+% 由生成的 hint-*/review-* 入口文件 \def\pdCompactPage{} 触发。
+\ifdefined\pdCompactPage
+  \geometry{a4paper, portrait, top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm, headheight=25pt}
+  \renewcommand{\pdColumns}{1}
+\fi
+
+% ---- 栏环境起止（统一由此处负责，main.tex/footer.tex 只调用宏） ----
+% multicols 不会因参数为 1 自动退化为单栏（会警告并强制改为双栏），
+% 因此栏数为 1 时不得进入 multicols 环境。
+\newcommand{\pdBeginColumns}{%
+  \ifnum\pdColumns>1 \begin{multicols}{\pdColumns}\fi
+}
+\newcommand{\pdEndColumns}{%
+  \ifnum\pdColumns>1 \end{multicols}\fi
+}
+
+% -----------------------------------------------------------------------------
+% 核心宏包加载
+% -----------------------------------------------------------------------------
+\usepackage{amsmath,amssymb,amsthm,bm,mathtools}
+\usepackage{fancyhdr}
+\usepackage{multicol}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{comment}
+\usepackage[framemethod=TikZ]{mdframed}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc, shapes.geometric}
+\usepackage{exam-zh-choices}  % 选择题选项自动排版宏包
+\usepackage{hyperref}
+\usepackage{lastpage}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!75!black,
+  citecolor=blue!75!black,
+  urlcolor=blue!75!black
+}
+
+% -----------------------------------------------------------------------------
+% 统计计数器（编译后输出环境使用摘要，便于验收与排错）
+% -----------------------------------------------------------------------------
+\newcounter{pdSolutionCount}
+\newcounter{pdNoteCount}
+\newcounter{pdFillinCount}
+\newlength{\fillinwidth}
+
+% -----------------------------------------------------------------------------
+% 视图条件装配宏（v2 单源多视图核心机制）
+% 当前编译入口的视图由入口文件 \def\pdCurrentView{<id>} 声明，config.tex 据此
+% 定义 \pdView@<id> 开关（未在 config.yaml views 声明的视图直接编译报错）。
+%
+%   \ViewBlock{<views 列表>}{<内容>}
+%       内容仅在当前视图属于 views 列表时输出，否则整段丢弃。
+%       materials 模式（teaching/materials.json 存在）下，切片中每个内容块
+%       以 `% block: <block_id>` 注释开头，其后 \ViewBlock 的 views 列表必须
+%       与 materials.json 中该块的 views 完全一致（check_numbering.py 核对）。
+%
+% 机制性防泄露（对应 diagnoses.md 揭示层级失效分析）：
+%   - 未声明 \pdCurrentView 的编译不定义任何视图开关，\ViewBlock 内容一律
+%     不输出——视图未声明时宁可不印，也不误印；
+%   - knowledgebox / hintbox / reviewbox 等含结论性内容的环境默认仅 teacher
+%     视图可见，学生视图必须显式声明（见下方各环境定义）；
+%   - available_after 不是 initial 的块在静态 PDF 中不会因为"印在留白之后"
+%     而延迟揭示，只能经 separate_hint / separate_review 独立入口分阶段发放。
+% -----------------------------------------------------------------------------
+\makeatletter
+\def\pd@yes{1}
+% \pdIfViewIn{<views 列表>}{<命中时内容>}{<未命中时内容>}
+\newcommand{\pdIfViewIn}[3]{%
+  \begingroup
+    \edef\pd@list{\zap@space#1 \@empty}%
+    \let\pd@hit\relax
+    \@for\pd@v:=\pd@list\do{%
+      \expandafter\ifx\csname pdView@\pd@v\endcsname\relax\else
+        \let\pd@hit\pd@yes
+      \fi}%
+    \ifx\pd@hit\pd@yes
+      \def\pd@next{\endgroup#2}%
+    \else
+      \def\pd@next{\endgroup#3}%
+    \fi
+  \pd@next}
+\makeatother
+
+% 视图条件内容块：\ViewBlock{student_initial,teacher}{内容}
+\newcommand{\ViewBlock}[2]{\pdIfViewIn{#1}{#2}{}}
+
+% -----------------------------------------------------------------------------
+% 双版本环境控制宏 (Single-source Dual-output)
+% 说明: solution/teacherNote/fillin/ansspace 在两版中的行为在此处统一定义，
+%       切片文件 (sec*.tex) 只需使用同一套命令，无需关心版本差异。
+%       教师版判定沿用 \TeacherVersion 开关（teacher 视图入口声明）；
+%       hint/review 入口不声明 \TeacherVersion，按学生侧规则剥离
+%       solution/teacherNote（双保险：内容块本应由 \ViewBlock 按视图装配）。
+% -----------------------------------------------------------------------------
+\ifdefined\TeacherVersion
+  % ============================ 教师版环境配置 ============================
+  \pagestyle{fancy}
+  \fancyhf{}
+  \fancyhead[L]{\bfseries\pdTeacherHeadLeft}
+  \fancyfoot[C]{\thepage\ of \pageref{LastPage}}
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0.4pt}
+
+  % 题型标签：题号后不带【】说明文字，保持版面干净
+  \newcommand{\qtype}[1]{}
+
+  % 双栏折页排版宏（教师单栏版不强制分栏或分页）
+  \newcommand{\pdColumnBreak}{}
+  \newcommand{\pdPageBreak}{}
+
+  % 题目状态标签 \practicemode{guided}（可选，缺省 guided）：
+  % 教学模式唯一取值为 guided（分步引导）；取值非法时发出编译警告。
+  \providecommand{\practicemode}[1]{%
+    \def\pdPmode{#1}%
+    \def\pdPmodeG{guided}%
+    \ifx\pdPmode\pdPmodeG\else
+      \PackageWarning{problem-driven}{\protect\practicemode\space 取值只能是 guided（收到“#1”）}%
+    \fi}
+
+  % 参考解答环境（显示完整答案推导，并计数）
+  \newenvironment{solution}[1][解]{%
+    \stepcounter{pdSolutionCount}%
+    \par\begingroup%
+    \begin{proof}[\indent\bfseries【#1】]%
+  }{%
+    \end{proof}\endgroup\par
+  }
+
+  % 教师专用教学要点、易错警示与评分提示环境
+  \newenvironment{teacherNote}[1][教学要点与易错分析]{%
+    \stepcounter{pdNoteCount}%
+    \par\vspace{0.6ex}%
+    \begingroup\small
+    \noindent\textbf{【#1】}\par\vspace{0.2ex}%
+  }{%
+    \endgroup\par\vspace{0.6ex}%
+  }
+
+  % 答题留白：教师版压缩为微小行距，消除多余空白
+  \newcommand{\ansspace}[1]{\par\vspace{0.4ex}}
+
+  % 填空宏：教师版在下划线居中呈现醒目的加粗答案（黑白印刷友好）；
+  % 缺宽度或缺答案时发出编译警告
+  \newcommand{\fillin}[2][]{%
+    \stepcounter{pdFillinCount}%
+    \if\relax\detokenize{#2}\relax
+      \PackageWarning{problem-driven}{\protect\fillin\space 缺少预留宽度参数（第 \thepdFillinCount\space 处）}%
+    \fi
+    \if\relax\detokenize{#1}\relax
+      \PackageWarning{problem-driven}{\protect\fillin\space 未提供参考答案（第 \thepdFillinCount\space 处）}%
+      \underline{\hspace{#2}}%
+    \else
+      \ifmmode
+        \settowidth{\fillinwidth}{$\bm{#1}$}%
+        \ifdim\fillinwidth>#2
+          \underline{\hspace{0.5em}{\bm{#1}}\hspace{0.5em}}%
+        \else
+          \underline{\makebox[#2][c]{$\bm{#1}$}}%
+        \fi
+      \else
+        \settowidth{\fillinwidth}{\bfseries#1}%
+        \ifdim\fillinwidth>#2
+          \underline{\hspace{0.5em}\textbf{#1}\hspace{0.5em}}%
+        \else
+          \underline{\makebox[#2][c]{\bfseries#1}}%
+        \fi
+      \fi
+    \fi
+  }
+\else
+  \ifdefined\StudentSolutionVersion
+    % ==================== 学生参考解答版环境配置 ====================
+    \pagestyle{fancy}
+    \fancyhf{}
+    \fancyhead[L]{\bfseries\ifdefined\pdMainTitle\pdMainTitle\else 学案\fi\quad 参考解答}
+    \fancyfoot[C]{\thepage\ of \pageref{LastPage}}
+    \renewcommand{\headrulewidth}{0.4pt}
+    \renewcommand{\footrulewidth}{0.4pt}
+
+    % 排版优化：疏松自然的段落间距与行距，公式间距舒适
+    \setlength{\parskip}{0.8ex plus 0.3ex minus 0.2ex}
+    \linespread{1.18}\selectfont
+    \setlength{\abovedisplayskip}{7pt plus 2pt minus 2pt}
+    \setlength{\belowdisplayskip}{7pt plus 2pt minus 2pt}
+
+    \newcommand{\qtype}[1]{}
+    \newcommand{\pdColumnBreak}{\par\vspace{1.5ex}}
+    \newcommand{\pdPageBreak}{\clearpage}
+    \providecommand{\practicemode}[1]{}
+
+    % 参考解答环境：显示解答，段前段后适度留白，标题显式突出
+    \newenvironment{solution}[1][参考解答]{%
+      \stepcounter{pdSolutionCount}%
+      \par\vspace{0.8ex}\begingroup
+      \begin{proof}[\indent\bfseries【#1】]%
+    }{%
+      \end{proof}\endgroup\vspace{0.8ex}\par
+    }
+    % 教师批注仍剥离
+    \specialcomment{teacherNote}{\stepcounter{pdNoteCount}\begingroup\def\ProcessCutFile{}}{\endgroup}
+    % 答题留白在解答版中忽略
+    \newcommand{\ansspace}[1]{}
+    \newcommand{\fillin}[2][]{%
+      \stepcounter{pdFillinCount}%
+      \if\relax\detokenize{#1}\relax
+        \underline{\hspace{#2}}%
+      \else
+        \textbf{#1}%
+      \fi
+    }
+  \else
+    % ==================== 学生侧环境配置（含 hint/review 入口） ====================
+    \pagestyle{fancy}
+    \fancyhf{}
+    \fancyhead[L]{姓名：\underline{\hspace{2.2cm}}\quad 班级：\underline{\hspace{2cm}}}
+    \fancyfoot[C]{\thepage\ of \pageref{LastPage}}
+    \renewcommand{\headrulewidth}{0.4pt}
+    \renewcommand{\footrulewidth}{0.4pt}
+
+    % 题型标签：学生版隐藏【xx题】字样（设计流程保留题型，但不明示）
+    \newcommand{\qtype}[1]{}
+
+    % 双栏折页排版宏（学生版梳松排版：按栏换栏、按页换页）
+    \newcommand{\pdColumnBreak}{\columnbreak}
+    \newcommand{\pdPageBreak}{\newpage}
+
+    % 题目状态标签：学生版隐藏（引导隐藏由切片写作纪律保证，
+    % 并由 scripts/check_numbering.py 检查题块内不得含提示标记）
+    \providecommand{\practicemode}[1]{}%
+
+    % 彻底剥离答案与教师批注，同时计数以便编译日志中核对剥离数量
+    % 注意: \specialcomment 默认会“包含”环境体；在组内将 \ProcessCutFile 重定义为
+    % 空即恢复剥离效果（comment 宏包官方推荐用法），begin 行尾内容会被自动丢弃。
+    \specialcomment{solution}{\stepcounter{pdSolutionCount}\begingroup\def\ProcessCutFile{}}{\endgroup}
+    \specialcomment{teacherNote}{\stepcounter{pdNoteCount}\begingroup\def\ProcessCutFile{}}{\endgroup}
+
+    % 答题留白：学生版产生实际书写所需的物理垂直空间
+    \newcommand{\ansspace}[1]{\vspace{#1}}
+
+    % 填空宏：学生版仅呈现预留长度的下划线空白
+    \newcommand{\fillin}[2][]{%
+      \stepcounter{pdFillinCount}%
+      \if\relax\detokenize{#2}\relax
+        \PackageWarning{problem-driven}{\protect\fillin\space 缺少预留宽度参数（第 \thepdFillinCount\space 处）}%
+      \fi
+      \underline{\hspace{#2}}%
+    }
+  \fi
+\fi
+
+% 编译结束时的质量摘要（写入 .log 与终端，供 build.py 解析核对）
+% SUMMARY 行保持旧版格式（不超过 79 列防 \typeout 折行）；视图名单独一行 VIEW。
+\AtEndDocument{%
+  \typeout{[problem-driven] VIEW \pdCurrentViewName}%
+  \typeout{[problem-driven] SUMMARY solution=\arabic{pdSolutionCount},
+    teacherNote=\arabic{pdNoteCount}, fillin=\arabic{pdFillinCount}}%
+  \ifdefined\TeacherVersion
+    \ifnum\value{pdSolutionCount}=0
+      \PackageWarning{problem-driven}{教师版未发现任何 solution 环境，请检查切片文件}%
+    \fi
+  \else
+    \ifdefined\StudentSolutionVersion
+      \typeout{[problem-driven] 学生解答版包含 solution=\arabic{pdSolutionCount}}%
+    \else
+      \typeout{[problem-driven] 学生版已剥离 solution/teacherNote（视图 \pdCurrentViewName），数量为上述 SUMMARY}%
+    \fi
+  \fi
+}
+
+% -----------------------------------------------------------------------------
+% 微型知识点模块与列表规范
+% \begin{microknowledge}[标题][可见视图列表]
+%   省略视图列表时按 L0 前置知识处理，全部视图可见；
+%   显式给出视图列表（如 [教师版预备知识][teacher]）时仅所列视图可见。
+%   注意：microknowledge 的内容层级由 materials 的块属性与 check_teaching /
+%   check_student_visibility / check_student_task 检查约束，写作时不得把 L1/L2 策略与结论包装成"知识卡"。
+% -----------------------------------------------------------------------------
+\makeatletter
+\newsavebox{\microbox}
+\newcommand{\pd@microrender}[2]{%
+  \par\vspace{0.8ex}%
+  \begin{lrbox}{\microbox}%
+    \begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}%
+      \textbf{【#1】}\par\vspace{0.3ex}\small #2%
+    \end{minipage}%
+  \end{lrbox}%
+  \noindent\fbox{\usebox{\microbox}}\par\vspace{0.8ex}%
+}
+\NewDocumentEnvironment{microknowledge}{O{核心定义与记号} o +b}{%
+  \IfNoValueTF{#2}%
+    {\pd@microrender{#1}{#3}}%
+    {\edef\pd@views{\zap@space#2 \@empty}%
+     \pdIfViewIn{\pd@views}{\pd@microrender{#1}{#3}}{}}%
+}{}
+\makeatother
+
+% -----------------------------------------------------------------------------
+% 结论框环境（虚线框）：默认仅 teacher 视图可见（机制性防泄露）
+% \begin{knowledgebox}[标题][追加可见视图]
+%   省略第二可选参数时仅 teacher 视图可见；学生侧视图（student_initial /
+%   hint-* / review-*）必须显式声明，如 [本节小结][review-p1]。
+%   v2 不再要求每切片末必须有结论框；结论框只放经审定、允许在该视图出现的
+%   内容（diagnoses.md：旧版 knowledgebox 无版本隔离导致学生直接看到答案）。
+% \begin{teacherKnowledgebox}[标题]  —— 固定仅 teacher 视图的结论/复盘框。
+% \begin{hintbox}[标题][追加可见视图] —— 提示框，默认仅 teacher，提示页须
+%   显式声明对应 hint-* 视图（或由装配层 \ViewBlock 统一控制）。
+% \begin{reviewbox}[标题][追加可见视图] —— 复盘框，默认仅 teacher，复盘页
+%   须显式声明对应 review-* 视图。
+% -----------------------------------------------------------------------------
+\mdfdefinestyle{pdKnowledgeBoxStyle}{%
+  linecolor=black,
+  linewidth=0.6pt,
+  backgroundcolor=white,
+  draw=black,  % 移除彩色设置
+  dash pattern=on 3pt off 2pt,
+  roundcorner=0pt,
+  innertopmargin=6pt,
+  innerbottommargin=6pt,
+  innerleftmargin=8pt,
+  innerrightmargin=8pt,
+  nobreak=true
+}
+\mdfdefinestyle{pdHintBoxStyle}{%
+  linecolor=black,
+  linewidth=0.6pt,
+  backgroundcolor=white,
+  draw=black,  % 移除彩色设置
+  dash pattern=on 2pt off 2pt,
+  roundcorner=0pt,
+  innertopmargin=6pt,
+  innerbottommargin=6pt,
+  innerleftmargin=8pt,
+  innerrightmargin=8pt,
+  nobreak=true
+}
+\mdfdefinestyle{pdReviewBoxStyle}{%
+  linecolor=black,
+  linewidth=0.6pt,
+  backgroundcolor=white,
+  roundcorner=0pt,
+  innertopmargin=6pt,
+  innerbottommargin=6pt,
+  innerleftmargin=8pt,
+  innerrightmargin=8pt,
+  nobreak=true
+}
+\makeatletter
+% #1=样式 #2=标题 #3=正文
+\newcommand{\pd@boxrender}[3]{%
+  \par\vspace{0.8ex}%
+  \begin{mdframed}[style=#1]%
+  \textbf{#2}\par\vspace{0.3ex}\small #3%
+  \end{mdframed}\par\vspace{0.8ex}%
+}
+% 默认视图列表 = teacher；显式第二可选参数为追加视图
+\NewDocumentEnvironment{knowledgebox}{O{本节结论} o +b}{%
+  \IfNoValueTF{#2}%
+    {\def\pd@views{teacher}}%
+    {\edef\pd@views{teacher,\zap@space#2 \@empty}}%
+  \pdIfViewIn{\pd@views}{\pd@boxrender{pdKnowledgeBoxStyle}{#1}{#3}}{}%
+}{}
+\NewDocumentEnvironment{teacherKnowledgebox}{O{教师结论与复盘} +b}{%
+  \pdIfViewIn{teacher}{\pd@boxrender{pdKnowledgeBoxStyle}{#1}{#2}}{}%
+}{}
+\NewDocumentEnvironment{hintbox}{O{提示} o +b}{%
+  \IfNoValueTF{#2}%
+    {\def\pd@views{teacher}}%
+    {\edef\pd@views{teacher,\zap@space#2 \@empty}}%
+  \pdIfViewIn{\pd@views}{\pd@boxrender{pdHintBoxStyle}{#1}{#3}}{}%
+}{}
+\NewDocumentEnvironment{reviewbox}{O{复盘} o +b}{%
+  \IfNoValueTF{#2}%
+    {\def\pd@views{teacher}}%
+    {\edef\pd@views{teacher,\zap@space#2 \@empty}}%
+  \pdIfViewIn{\pd@views}{\pd@boxrender{pdReviewBoxStyle}{#1}{#3}}{}%
+}{}
+\makeatother
+
+
+% 列表样式统一设定 (一级大题号连续递增 1. 2. 3.；二级小问题号用 (1), (2), (3)...)
+\setlist[enumerate,1]{label=\textbf{\arabic*.}, leftmargin=*, itemsep=0.8em, topsep=0.4ex}
+\setlist[enumerate,2]{label=(\arabic*), leftmargin=*, itemsep=0.4em}
+
+% -----------------------------------------------------------------------------
+% 题链自动编号环境 probchain（推荐）
+% 自建计数器跨环境续号，彻底摆脱手工维护 series=/resume= 的对位负担：
+% 所有小节统一写作 \begin{probchain}...\end{probchain}，先后顺序天然决定题号。
+% 旧写法 \begin{enumerate}[series=probchain] / [resume=probchain] 仍然兼容。
+% 注意：probchain 主体应按视图整体装配（如 \ViewBlock{student_initial,teacher}），
+% 避免提示/复盘视图渲染出没有任何 \item 的空题链（空 enumerate 是编译错误）。
+% -----------------------------------------------------------------------------
+\newcounter{pdprob}
+\newenvironment{probchain}{%
+  \begin{enumerate}[start=\the\numexpr\value{pdprob}+1\relax]%
+}{%
+    \setcounter{pdprob}{\value{enumi}}%
+  \end{enumerate}%
+}

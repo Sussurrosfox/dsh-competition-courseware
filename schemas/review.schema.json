@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/review.schema.json",
+  "title": "ReviewRecord",
+  "description": "独立审查记录（research/reviews/ 或 teaching/reviews/）。审查者未参与对应内容写作，凭材料证据判断；结论与脚本检查状态分开，转换规则见 references/handoff.md。§4.2 升级：增加 evidence_kind 区分三类证据来源；§4.1 升级：findings 须覆盖 problem_id×view_id 粒度，每条附页面/行证据。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "review_id",
+    "scope",
+    "coverage",
+    "subject_digest",
+    "conclusion",
+    "findings",
+    "reviewer_task_id",
+    "evidence_kind"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "review_id": {"type": "string", "minLength": 1},
+    "scope": {
+      "type": "string",
+      "enum": [
+        "research",
+        "student_read",
+        "teacher_use",
+        "math_recheck",
+        "structure_layout"
+      ],
+      "description": "审查范围：research 教研冻结前复核；student_read 学生阅读；teacher_use 教师使用；math_recheck 数学复核；structure_layout 结构与版面。任一局部 PASS 不代表全课通过。"
+    },
+    "coverage": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string"},
+      "description": "本审查实际覆盖的对象 ID（problem_id / block_id / view_id 等）。§4.1：student_read 审查须按 problem_id×view_id 粒度逐项给出结果，每个题目在每个相关视图至少一条 finding。"
+    },
+    "subject_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "受审对象的 SHA-256 摘要（brief_digest 或 production_digest 等），绑定同一版本；摘要不一致即旧结论失效。"
+    },
+    "conclusion": {
+      "type": "string",
+      "enum": ["PASS", "REVISE", "NEEDS_EVIDENCE"]
+    },
+    "evidence_kind": {
+      "type": "string",
+      "enum": ["static_check", "model_review", "pilot_observation"],
+      "description": "§4.2：证据来源类型。static_check=脚本/字面检查；model_review=模型审查（未经真实课堂验证）；pilot_observation=真实试教课堂观察记录。发布清单须按此字段分列；试教尚未进行时须使用 model_review，不得标为 pilot_observation。"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "severity", "description", "evidence_refs", "status"],
+        "properties": {
+          "finding_id": {"type": "string", "minLength": 1},
+          "severity": {
+            "type": "string",
+            "enum": ["info", "minor", "major", "blocker"]
+          },
+          "description": {"type": "string"},
+          "location": {
+            "type": "string",
+            "description": "§4.1：具体位置（如 'student.pdf 第3页'、'block-p02-task 第12行'、'view=student_initial p02'）；逐题/页级审查须填写此字段，不空泛通过。"
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/relPath"}
+          },
+          "status": {
+            "type": "string",
+            "enum": ["open", "resolved"],
+            "description": "review 级疑似项须逐项处置。"
+          }
+        }
+      }
+    },
+    "reviewer_task_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "执行本审查的独立任务 ID，用于确认审查者与写作者分离。"
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

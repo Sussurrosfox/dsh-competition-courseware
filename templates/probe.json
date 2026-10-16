@@ -1,0 +1,55 @@
+{
+  "schema_version": "2.1.0",
+  "problem_id": "p01",
+  "input_refs": [
+    "sources/problems/p01.md"
+  ],
+  "domain": "x, y, z \\in (0, +\\infty)",
+  "probes": [
+    {
+      "probe_id": "probe-symmetry",
+      "kind": "symmetry",
+      "path": "x=y=z=1",
+      "exact_expression": "3/\\sqrt{2} = 3\\sqrt{2}/2",
+      "numeric_value": "2.12132034355964",
+      "comparison": "strictly_greater",
+      "equality_status": "unattainable",
+      "evidence_note": "代入对称中心点计算，目标值为 2，计算结果约为 2.1213，严格大于目标常数，表明极值点大概率不在内部对称中心取得。"
+    },
+    {
+      "probe_id": "probe-boundary",
+      "kind": "boundary",
+      "path": "x -> 0+, y=1, z=1",
+      "exact_expression": "\\lim_{x \\to 0^+} (\\sqrt{x/2} + 2\\sqrt{1/(1+x)}) = 0 + 2 = 2",
+      "numeric_value": "2.00000000000000",
+      "comparison": "matches_bound",
+      "equality_status": "asymptotic_boundary",
+      "evidence_note": "一元趋近于 0，其余变元相等时，原式极限逼近目标常数 2。表明下确界为 2，但等号在内部正实数域取不到，在边界处渐近达成。"
+    },
+    {
+      "probe_id": "probe-perturbation",
+      "kind": "perturbation",
+      "path": "(1+eps, 1-eps, 1), eps=0.01",
+      "exact_expression": "\\sqrt{(1+eps)/(2-eps)} + \\sqrt{(1-eps)/(2+eps)} + \\sqrt{1/2}",
+      "numeric_value": "2.12143280512211",
+      "comparison": "strictly_greater",
+      "equality_status": "unattainable",
+      "evidence_note": "在对称中心施加微扰后数值增大，说明对称点是局部极小值而非全局极小值。"
+    }
+  ],
+  "conjectures": [
+    "下界 2 为紧确下确界（infimum），但在正实数内取不到等号",
+    "等号在退化边界 (x->0+, y=z) 处渐近达到",
+    "解题时不能在内部做粗暴均值放缩，必须保住边界处的极限尺度"
+  ],
+  "student_warmup": {
+    "question": "请先代入 x=y=z=1 计算原式，再代入 x=0.001, y=1, z=1 计算，你能发现什么反直觉的现象？",
+    "test_points": [
+      "x=y=z=1",
+      "x=0.001, y=1, z=1"
+    ],
+    "expected_phenomenon": "对称点代入得到约 2.12，而靠近边界的点代入得到约 2.02，越靠近边界反而越接近 2。"
+  },
+  "verification_status": "verified",
+  "task_id": "r2-probe-p01-01"
+}

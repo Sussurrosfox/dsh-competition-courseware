@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/brief.schema.json",
+  "title": "TeachingBrief",
+  "description": "教研到教学的交接契约（research/brief.json）。字段组对应 meet.md 第四节；teaching-brief.md 是本文件的可读视图，不另维护冲突事实表。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "brief_id",
+    "revision",
+    "run_id",
+    "source_manifest_ref",
+    "course_constraints",
+    "selection",
+    "math_baselines",
+    "teaching_decisions",
+    "supplements",
+    "reveal_plan",
+    "acceptance_requirements",
+    "open_items",
+    "freeze_basis"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "brief_id": {"type": "string", "minLength": 1},
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "冻结版本号；修改形成下一 revision，旧版归档。"
+    },
+    "run_id": {"type": "string", "minLength": 1},
+    "source_manifest_ref": {"$ref": "#/$defs/relPath"},
+    "selected_questions": {
+      "type": "object",
+      "description": "v2.3 Section Guided 模式选定题目清单及状态",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {"type": "string"},
+          "title": {"type": "string"},
+          "stem": {"type": "string"}
+        }
+      }
+    },
+    "course_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goals", "student_prerequisites", "total_time_minutes", "assumptions"],
+      "properties": {
+        "goals": {"type": "array", "items": {"type": "string"}},
+        "student_prerequisites": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["item", "basis"],
+            "properties": {
+              "item": {"type": "string"},
+              "basis": {"type": "string", "enum": ["verified", "assumed"]},
+              "note": {"type": "string"}
+            }
+          }
+        },
+        "total_time_minutes": {"type": "integer", "minimum": 1},
+        "assumptions": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "明确假设列表。"
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selected_problem_ids"],
+      "properties": {
+        "selected_problem_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          },
+          "description": "有序入选题，顺序即题组顺序。qid 为安全标识符（禁止路径分隔符与点号，防路径穿越）。"
+        },
+        "alternates_ref": {
+          "type": ["string", "null"],
+          "pattern": "^[^\\\\]*$",
+          "description": "备选与排除理由记录的引用（如 selection.json）。"
+        }
+      }
+    },
+    "math_baselines": {
+      "type": "array",
+      "description": "每题数学基线：题面、解答、证明义务、等号与边界检查的引用。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["problem_id", "statement_ref", "proof_refs", "proof_obligation_refs", "subquestion_refs"],
+        "properties": {
+          "problem_id": {"type": "string", "minLength": 1},
+          "statement_ref": {"$ref": "#/$defs/relPath"},
+          "probe_ref": {
+            "$ref": "#/$defs/relPath",
+            "description": "关联的数值探针报告 probe.json 引用。"
+          },
+          "pitfall_ref": {
+            "$ref": "#/$defs/relPath",
+            "description": "错解报告引用（legacy 模式可选，core 模式不要求）。"
+          },
+          "solution_ref": {
+            "$ref": "#/$defs/relPath",
+            "description": "关联的严谨证明报告 solution.json 引用。"
+          },
+          "proof_refs": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/relPath"}
+          },
+          "proof_obligation_refs": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "采用的证明义务 obligation_id 列表。"
+          },
+          "equality_boundary_refs": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/relPath"},
+            "description": "等号与边界检查记录引用。"
+          },
+          "subquestion_refs": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "小问 ID 列表，对应 solution.json 中的 subquestion_results。"
+          }
+        }
+      }
+    },
+    "teaching_decisions": {
+      "type": "array",
+      "description": "每题教学决策；教学阶段不得静默改变。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "problem_id",
+          "lesson_mode",
+          "objectives",
+          "key_tasks",
+          "mode_rationale"
+        ],
+        "properties": {
+          "problem_id": {"type": "string", "minLength": 1},
+          "lesson_mode": {
+            "type": "string",
+            "enum": ["guided"]
+          },
+          "objectives": {"type": "array", "items": {"type": "string"}},
+          "key_tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["task_id", "description", "student_evidence", "time_minutes"],
+              "properties": {
+                "task_id": {"type": "string", "minLength": 1},
+                "description": {"type": "string"},
+                "student_evidence": {
+                  "type": "string",
+                  "description": "学生应留下的证据。"
+                },
+                "time_minutes": {"type": "integer", "minimum": 0},
+                "hint_trigger": {
+                  "type": "string",
+                  "description": "提示触发条件（guided 模式等）。"
+                }
+              }
+            }
+          },
+          "mode_rationale": {
+            "type": "string",
+            "description": "模式选择理由；缺少有价值的错误路线不等于适合无提示作答。"
+          }
+        }
+      }
+    },
+    "supplements": {
+      "type": "array",
+      "description": "已核验补充材料清单（例子、误路、引理、迁移题）。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["supplement_id", "kind", "problem_id", "content_ref", "verification"],
+        "properties": {
+          "supplement_id": {"type": "string", "minLength": 1},
+          "kind": {
+            "type": "string",
+            "enum": ["example", "misstep", "lemma", "transfer", "exercise"]
+          },
+          "problem_id": {"type": "string", "minLength": 1},
+          "content_ref": {"$ref": "#/$defs/relPath"},
+          "verification": {
+            "type": "string",
+            "enum": ["pending", "verified", "refuted", "unverified"]
+          }
+        }
+      }
+    },
+    "reveal_plan": {
+      "type": "array",
+      "description": "揭示计划：信息块的强度、读者、发放时机与渠道；语义见 references/handoff.md。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["info_id", "problem_id", "level", "audience", "available_after", "delivery_channel"],
+        "properties": {
+          "info_id": {"type": "string", "minLength": 1},
+          "problem_id": {"type": "string", "minLength": 1},
+          "level": {
+            "type": "string",
+            "enum": ["L0", "L1", "L2"],
+            "description": "信息强度：L0 不泄露策略；L1 提示方向；L2 关键步骤或结论。"
+          },
+          "audience": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "enum": ["student", "teacher"]}
+          },
+          "available_after": {
+            "type": "string",
+            "minLength": 1,
+            "description": "事件 ID 或 \"initial\"：学生何时收到。"
+          },
+          "delivery_channel": {
+            "type": "string",
+            "enum": ["in_main", "separate_hint", "separate_review", "teacher_only"]
+          }
+        }
+      }
+    },
+    "protected_strategy_tokens": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "description": "v2.4.0：本课受保护的策略 token（定理名、关键算子、结论性短语）。学生任务门禁（check_student_task.py）以本列表为第一道防线；内置通用黑名单仅为第二道防线，不替代本声明。"
+    },
+    "acceptance_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["per_problem", "lesson_alignment", "release_order"],
+      "properties": {
+        "per_problem": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["problem_id", "completion_criteria"],
+            "properties": {
+              "problem_id": {"type": "string", "minLength": 1},
+              "completion_criteria": {
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            }
+          }
+        },
+        "lesson_alignment": {
+          "type": "string",
+          "description": "整课对照关系说明。"
+        },
+        "release_order": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "计划中的发放顺序（题或信息块 ID）。"
+        }
+      }
+    },
+    "open_items": {
+      "type": "array",
+      "description": "开放项：明确哪些只是教学假设，哪些阻止交接。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item_id", "description", "kind", "blocks_handoff"],
+        "properties": {
+          "item_id": {"type": "string", "minLength": 1},
+          "description": {"type": "string"},
+          "kind": {
+            "type": "string",
+            "enum": ["teaching_hypothesis", "unverified_source", "missing_material", "other"]
+          },
+          "blocks_handoff": {
+            "type": "boolean",
+            "description": "true 表示阻止相应部分交接（如源题不成立、证明未闭合、学生所需材料缺失）。"
+          }
+        }
+      }
+    },
+    "freeze_basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_log_ref", "research_review_refs"],
+      "properties": {
+        "decision_log_ref": {
+          "$ref": "#/$defs/relPath",
+          "description": "主 agent 决策记录引用。"
+        },
+        "research_review_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/relPath"},
+          "description": "研究复核报告引用；须覆盖全部入选题和跨题设计。"
+        }
+      }
+    },
+    "cognitive_workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "roles": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "notes": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

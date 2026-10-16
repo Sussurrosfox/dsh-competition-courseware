@@ -1,0 +1,84 @@
+% -*- coding: utf-8 -*-
+% =============================================================================
+% 竞赛代表题装配切片模板（v2 单源多视图版；项目中复制/改写为 sec1.tex 等）
+% 规范要求（生效规则以 SKILL.md 与 references/reveal-levels.md 为准）：
+% 1. 绝对不要在此文件中书写 \documentclass 或 \begin{document}。
+% 2. 切片是"装配层"：内容块正文位于 teaching/content/<block>.tex，
+%    本层用 `% block: <block_id>` 注释 + \ViewBlock{<views>}{\input{...}}
+%    按 teaching/materials.json 的块属性装配；views 列表必须与
+%    materials.json 中该块的 views 完全一致（check_numbering.py 字面核对）。
+%    不带 % block: 注释的 \ViewBlock 是结构性容器（如下面的题组容器），
+%    仅用于避免空题链等版面问题，check_numbering 只记提示、不判失败。
+% 3. 题链编号：所有切片统一使用 \begin{probchain}....\end{probchain} 自动
+%    连续编号。严禁 \setcounter{pdprob} 或 \ifdefined\TeacherVersion：
+%    题号由装配顺序渲染，视图差异只能由模板宏与 \ViewBlock 产生。
+%    probchain 主体须整体放入进主视图的结构容器（见下），避免提示/复盘
+%    视图渲染出没有任何 \item 的空题链（空 enumerate 是编译错误）。
+% 4. 稳定题身份：每个一级 \item 前有 `% qid: <稳定题ID>` 注释，qid 与
+%    materials.json 的 problem_id 双向可回溯；显示题号是渲染结果。
+%    题号规范：各题号（\item）后严禁附加【】及其中的说明文字，直接接入题干正文。
+% 5. 视图缺省安全：knowledgebox / teacherKnowledgebox / hintbox / reviewbox
+%    默认仅 teacher 视图可见，学生侧视图必须显式声明；microknowledge 缺省
+%    全视图可见（按 L0 前置知识对待），可经第二可选参数限制。
+%    v2 不再要求"每切片末必须知识结论框"——结论框按内容块装配，
+%    只放经审定允许在该视图出现的内容。
+% 6. 延迟揭示：available_after != initial 的块不得进入 student_initial
+%    视图，只能经 hint-<pid> / review-<pid> 独立入口发放（gen_config 按
+%    materials.json 判断，无块则不生成空入口）。
+% 7. 版面与排版规范（每题一栏均匀排布）：
+%    student.tex（学生初发学案）严格遵循「每题一栏均匀排布」的作业纸版面格式。
+%    - 单个切片内题干、探究子问及作答留白（\ansspace）的总高度应均匀充盈单栏版心（约 200-220mm）；
+%    - 切片在 main.tex 装配时，各切片之间必须使用 \pdColumnBreak 进行强制分栏，
+%      确保每道代表题独立占据一整栏，形成两页四栏或多页对齐的均匀排布。
+% =============================================================================
+
+% ---- 题组容器（结构性 \ViewBlock，非内容块）：主视图才渲染题链与标题 ----
+% 注意：section 标题格式为「罗马数字 + 简洁主题」，如 \section*{I 阿基米德定理}
+%       严禁出现来源信息（书名、章节编号、"例 X.XX"等）
+\ViewBlock{student_initial,teacher}{%
+\section*{I 威尔逊定理与素性判别}
+
+% 前置知识块（L0）：只放解题前已应知的结论，不提前剧透本题关键步骤。
+% block: info-pXX-prereq
+\ViewBlock{student_initial,teacher}{%
+\begin{microknowledge}[平方数的基本同余性质]
+\begin{enumerate}
+    \item 完全平方数模 $4$ 的余数只能是 $0$ 或 $1$。
+    \item 对正整数 $m$，$3^m \equiv 3 \pmod 4$（$m$ 为奇数）或 $3^m \equiv 1 \pmod 4$（$m$ 为偶数）。
+\end{enumerate}
+\end{microknowledge}}
+
+\begin{probchain}
+
+% qid: pXX
+% block: info-pXX-statement
+\ViewBlock{student_initial,teacher}{%
+\item \input{teaching/content/info-pXX-statement.tex}}
+
+% block: task-pXX-t1
+\ViewBlock{student_initial,teacher}{%
+\input{teaching/content/task-pXX-t1.tex}
+% 独立作答留白：对应课堂计划的独立尝试时间；留白之前不得出现任何方法提示。
+\ansspace{6cm}}
+
+\end{probchain}
+}
+
+% ── L0 开场观察对话（题目之后的讨论）───────────────────────────
+% block: info-pXX-hint
+\ViewBlock{teacher,hint-pXX}{%
+\begin{hintbox}[转折提示][teacher,hint-pXX]
+\input{teaching/content/info-pXX-hint.tex}
+\end{hintbox}}
+
+% ---- 教师专属证明块（teacher_only）：完整覆盖 brief 的证明义务 ----
+% block: info-pXX-proof
+\ViewBlock{teacher}{%
+\input{teaching/content/info-pXX-proof.tex}}
+
+% ---- 复盘块（可选）：经审定的结论回顾，显式声明 review 视图 ----
+% block: info-pXX-review
+\ViewBlock{teacher,review-pXX}{%
+\begin{reviewbox}[本题结论与方法回顾][teacher,review-pXX]
+\input{teaching/content/info-pXX-review.tex}
+\end{reviewbox}}

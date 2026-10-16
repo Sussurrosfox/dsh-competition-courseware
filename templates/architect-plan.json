@@ -1,0 +1,135 @@
+{
+  "schema_version": "2.4.0",
+  "brief_id": "brief-02",
+  "brief_revision": 1,
+  "plan_scope": "full_lesson",
+  "problems": [
+    {
+      "problem_id": "P01",
+      "source_refs": [
+        "research/problems/P01/probe.json",
+        "research/problems/P01/pitfall.json",
+        "research/problems/P01/solution.json",
+        "research/problems/P01/solution.md"
+      ],
+      "student_track": {
+        "tasks": [
+          {
+            "task_id": "task-P01",
+            "student_evidence": "记录对称点与边界点的代入结果，写出候选放缩方向失败的原因，并给出独立证明",
+            "worksheet_ref": "teaching/generated/P01-student-task.json"
+          }
+        ]
+      },
+      "teacher_track": {
+        "timeline_minutes": [
+          {
+            "phase": "特例破冰与试算观察",
+            "time_minutes": 5,
+            "activity": "学生动手代入计算对称点与边界值",
+            "pause_point": false
+          },
+          {
+            "phase": "递进探究与教师巡视",
+            "time_minutes": 10,
+            "activity": "学生尝试放缩，教师巡视草稿并出示伪证明草稿",
+            "pause_point": true
+          },
+          {
+            "phase": "按需提示与难点点拨",
+            "time_minutes": 10,
+            "activity": "按需发放 Level 1/2/3 提示",
+            "pause_point": true
+          },
+          {
+            "phase": "独立作答与严谨收口",
+            "time_minutes": 15,
+            "activity": "学生独立书写证明，教师精讲边界极限逼近论证",
+            "pause_point": false
+          }
+        ],
+        "radar_checkpoints": [
+          {
+            "error_type": "direction_inversion",
+            "observation_signal": "在分母上直接写出 y+z >= 2\\sqrt{yz} 导致不等号反向",
+            "guidance_script": "注意你的目标是求下界，把分母放大之后整个分式是在变大还是变小？"
+          },
+          {
+            "error_type": "over_bounding",
+            "observation_signal": "草稿纸上试图暴力通分或粗暴柯西，算出常数为 \\sqrt{3}",
+            "guidance_script": "算出来的常数是 1.732，比 2 小，说明放缩过头了，必须保住边界处的极限尺度。"
+          }
+        ],
+        "prompting_questions": [
+          "为什么结构完全对称的式子，最小值却不在对称中心取得？",
+          "怎样才能既使用基本不等式消除根号，又不颠倒不等号的方向？"
+        ],
+        "proof_ref": "research/problems/P01/solution.md",
+        "variants": [
+          {
+            "variant_id": "var-01",
+            "kind": "consolidation",
+            "statement": "已知 a, b, c > 0，求 \\sum a/\\sqrt{a^2+b^2} 的取值范围。",
+            "pedagogical_purpose": "降维巩固提根号变量转乘积的放缩机制。"
+          },
+          {
+            "variant_id": "var-02",
+            "kind": "elevation",
+            "statement": "证明原题中的待定系数局部放缩。",
+            "pedagogical_purpose": "升维考查非对称系数下的待定放缩。"
+          }
+        ]
+      },
+      "blocks": [
+        {
+          "block_id": "blk-P01-statement",
+          "kind": "statement",
+          "level": "L0",
+          "audience": ["student", "teacher"],
+          "available_after": "initial",
+          "delivery_channel": "in_main",
+          "source_refs": ["sources/problems/P01.md"],
+          "content_ref": "teaching/content/blk-P01-statement.tex",
+          "task_id": "task-P01"
+        },
+        {
+          "block_id": "blk-P01-warmup",
+          "kind": "warmup",
+          "level": "L0",
+          "audience": ["student", "teacher"],
+          "available_after": "initial",
+          "delivery_channel": "in_main",
+          "source_refs": ["research/problems/P01/probe.json"],
+          "content_ref": "teaching/content/blk-P01-warmup.tex",
+          "task_id": "task-P01"
+        },
+        {
+          "block_id": "blk-P01-hint-l2",
+          "kind": "scaffolding_l2",
+          "level": "L1",
+          "audience": ["student", "teacher"],
+          "available_after": "attempt-blocked",
+          "delivery_channel": "separate_hint",
+          "source_refs": ["research/problems/P01/solution.json"],
+          "content_ref": "teaching/content/blk-P01-hint-l2.tex",
+          "task_id": "task-P01"
+        },
+        {
+          "block_id": "blk-P01-teacher-guide",
+          "kind": "teacher_guide",
+          "level": "L2",
+          "audience": ["teacher"],
+          "available_after": "initial",
+          "delivery_channel": "teacher_only",
+          "source_refs": ["research/problems/P01/solution.json"],
+          "content_ref": "teaching/content/blk-P01-teacher-guide.tex",
+          "task_id": null
+        }
+      ]
+    }
+  ],
+  "forbidden_feature_refs": [
+    "feature_direct_denominator_amgm"
+  ],
+  "verification_status": "verified"
+}

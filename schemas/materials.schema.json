@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/materials.schema.json",
+  "title": "MaterialsRecord",
+  "description": "统一内容源清单（teaching/materials.json）：全部信息块及其可见性与出处，学生包与教师包由同一份内容源按视图生成。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "brief_id", "brief_revision", "blocks", "tasks"],
+  "properties": {
+    "schema_version": {"type": "string", "description": "§5.1：统一升至新 schema 版本，需与 workflow_profile 一致"},
+    "brief_id": {"type": "string", "minLength": 1},
+    "brief_revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "本材料绑定的 brief 版本；brief 更新后材料标 stale 并须重新绑定。"
+    },
+    "blocks": {
+      "type": "array",
+      "description": "统一内容块；字段语义以 references/handoff.md 为准。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "block_id",
+          "problem_id",
+          "task_id",
+          "source_refs",
+          "brief_revision",
+          "content_ref",
+          "level",
+          "audience",
+          "available_after",
+          "delivery_channel",
+          "views"
+        ],
+        "properties": {
+          "block_id": {"type": "string", "minLength": 1},
+          "problem_id": {"type": "string", "minLength": 1},
+          "task_id": {
+            "type": ["string", "null"],
+            "description": "对应关键任务 task_id；无对应任务（如纯教师证明块）为 null。"
+          },
+          "source_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/$defs/relPath"},
+            "description": "来源研究材料引用，可回溯到 brief 引用的已核验内容。"
+          },
+          "brief_revision": {"type": "integer", "minimum": 1},
+          "content_ref": {
+            "$ref": "#/$defs/relPath",
+            "description": "内容文件（如 teaching/content/<block>.tex）。"
+          },
+          "level": {
+            "type": "string",
+            "enum": ["L0", "L1", "L2"]
+          },
+          "audience": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "enum": ["student", "teacher"]}
+          },
+          "available_after": {
+            "type": "string",
+            "minLength": 1,
+            "description": "事件 ID 或 \"initial\"。student_initial 视图不得接收等待未来事件才可发放的块。"
+          },
+          "delivery_channel": {
+            "type": "string",
+            "enum": ["in_main", "teacher_only"]
+          },
+          "views": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"},
+            "description": "该块进入的视图 ID（如 student_initial、teacher）。Core 模式只允许：student_initial、teacher。§5.4：active 题目必须产生独立 task block 和 teacher solution block。"
+          },
+          "question_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "§5.4：题目 ID，每个 task block 必须有唯一 question_id"
+          },
+          "subquestion_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "§5.4：该 block 覆盖的小问 ID 列表，teacher solution 须列出所有 subquestion_ids"
+          },
+          "cognitive_role": {
+            "type": "string",
+            "description": "认知工作流角色标记（核心模式不用于教学控制，仅作为内部备注）。Legacy 模式可用值：probe, pitfall, scaffolding_l1 等。"
+          },
+          "forbidden_feature_refs": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "该块禁止泄露的抽象特征 ID 列表。"
+          },
+          "block_type": {
+            "type": "string",
+            "enum": ["content", "structural"],
+            "description": "§2.3：块用途类型。content（默认）= 须有 block: 注释与 materials 登记的内容块；structural = 纯装配结构容器（对应 LaTeX 中 %% block_type: structural 注释的 \\ViewBlock），不计入内容块校验。"
+          }
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "description": "视图与任务对应关系。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_id", "problem_id", "block_ids", "views"],
+        "properties": {
+          "task_id": {"type": "string", "minLength": 1},
+          "problem_id": {"type": "string", "minLength": 1},
+          "block_ids": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "views": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

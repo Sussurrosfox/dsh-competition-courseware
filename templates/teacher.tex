@@ -1,0 +1,12 @@
+% -*- coding: utf-8 -*-
+% =============================================================================
+% teacher 视图编译入口（完整教师资料）
+% 装配内容：teaching/materials.json 中 views 含 teacher 的块（题面、任务、
+%           提示、复盘、完整证明与教学依据；证明义务不可因压缩版面删除）。
+% 编译特性：开启 \TeacherVersion 开关，显示完整参考解答、研讨组织建议与
+%           易错提示，压缩多余答题留白；A4 竖版单栏。
+% 编译命令：xelatex teacher.tex（或 scripts/build.py 按 views 顺序统一构建）
+% =============================================================================
+\def\TeacherVersion{}
+\def\pdCurrentView{teacher}
+\input{main.tex}

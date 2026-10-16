@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v2.local/selection.schema.json",
+  "title": "SelectionRecord",
+  "description": "候选题目池与选题记录（candidates.json / selection.json）：逐题处理状态与理由、初筛入围名单、最终有序入选题。selected_ids 只由主 agent 写入。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "candidates",
+    "shortlist",
+    "selected_ids"
+  ],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "run_id": {"type": "string", "minLength": 1},
+    "candidates": {
+      "type": "array",
+      "description": "候选池，应覆盖用户授权范围内的材料。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "problem_id",
+          "statement_ref",
+          "source_status",
+          "disposition",
+          "reason"
+        ],
+        "properties": {
+          "problem_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "稳定 problem_id，全项目唯一。"
+          },
+          "statement_ref": {"$ref": "#/$defs/relPath"},
+          "solution_ref": {
+            "type": ["string", "null"],
+            "pattern": "^[^\\\\]+$",
+            "description": "解答位置；源题缺解答为 null，不自动排除但需注明研究成本。"
+          },
+          "source_status": {
+            "type": "string",
+            "enum": ["verified", "unverified", "unknown"],
+            "description": "来源状态须诚实：出处不详但本地可追溯记 unverified；不得把难度估计写成赛事出处。"
+          },
+          "structural_features": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "结构特征（如调等/调端/磨光），用于结构重复排除。"
+          },
+          "initial_notes": {"type": "string"},
+          "disposition": {
+            "type": "string",
+            "enum": ["pending", "selected_for_research", "reserve", "excluded"],
+            "description": "初筛处理状态：pending 未处理；selected_for_research 入围深研；reserve 备选；excluded 排除。"
+          },
+          "reason": {
+            "type": "string",
+            "description": "逐题理由，联系课程目标与已有材料，不依赖单一总分。"
+          }
+        }
+      }
+    },
+    "shortlist": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "初筛后进入深研的 problem_id 列表（R1 结果）。"
+    },
+    "selected_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "复选后最终有序入选题（R4 结果），顺序即题组顺序。"
+    }
+  },
+  "$defs": {
+    "relPath": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$"
+    }
+  }
+}

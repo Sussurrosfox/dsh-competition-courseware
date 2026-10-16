@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v5.local/capability.schema.json",
+  "title": "CapabilityToken",
+  "description": "一次性能力令牌（§4.2）。由编排器/网关签发，模型不得决定 token 内容。绑定 run_id/attempt_id/agent_role/section_id/question_ids/read+write 前缀/input_digest/expires_at/nonce。至少包含 HMAC-SHA256 或 Ed25519 签名。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "capability_id",
+    "run_id",
+    "attempt_id",
+    "agent_role",
+    "question_ids",
+    "read_prefixes",
+    "write_prefixes",
+    "input_digest",
+    "expires_at",
+    "nonce"
+  ],
+  "properties": {
+    "capability_id": {
+      "type": "string",
+      "pattern": "^cap-[A-Za-z0-9_-]+$",
+      "description": "能力令牌唯一 ID，形如 cap-..."
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_-]+$",
+      "description": "本次 run 的 ID"
+    },
+    "attempt_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "尝试序号；修复只能产生新 attempt，不能覆盖旧 attempt"
+    },
+    "agent_role": {
+      "type": "string",
+      "enum": [
+        "section-writer",
+        "student-task",
+        "teacher-solution",
+        "reviewer"
+      ],
+      "description": "代理角色；禁止 full-lesson writer（§3.1）"
+    },
+    "section_id": {
+      "type": "string",
+      "pattern": "^S[0-9]+$",
+      "description": "section-writer / 题级代理所属 section；reviewer 可省略"
+    },
+    "question_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^P?[0-9]+$"},
+      "description": "本 token 白名单允许操作的题目 ID 列表"
+    },
+    "read_prefixes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/relPrefix"},
+      "description": "允许读取的路径前缀（项目相对，正斜杠）"
+    },
+    "write_prefixes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/stagingPrefix"},
+      "description": "允许写入的 staging 前缀；必须是 staging 目录，禁止 canonical"
+    },
+    "input_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "输入快照 manifest 的 SHA-256；任何输入变化即失效（§3.2）"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC 过期时间；过期即进入 BLOCKED"
+    },
+    "nonce": {
+      "type": "string",
+      "minLength": 8,
+      "description": "一次性随机值；消费后重复提交返回 CAPABILITY_REPLAY"
+    },
+    "signature": {
+      "type": "string",
+      "minLength": 16,
+      "description": "网关持有的密钥对以上字段的签名（HMAC-SHA256 或 Ed25519，hex/base64）"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"agent_role": {"const": "section-writer"}}
+      },
+      "then": {
+        "required": ["section_id"],
+        "properties": {
+          "write_prefixes": {
+            "description": "section-writer 只能写自己 section 的 staging"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"agent_role": {"const": "student-task"}}
+      },
+      "then": {
+        "properties": {
+          "question_ids": {"maxItems": 1}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"agent_role": {"const": "teacher-solution"}}
+      },
+      "then": {
+        "properties": {
+          "question_ids": {"maxItems": 1}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "relPrefix": {
+      "type": "string",
+      "pattern": "^[^\\\\]+$",
+      "not": {"pattern": "(^|/)\\.\\./"}
+    },
+    "stagingPrefix": {
+      "type": "string",
+      "pattern": "^run/[A-Za-z0-9_-]+/sections/S[0-9]+/staging/",
+      "description": "写入前缀必须落在某 section 的 staging 目录内，禁止写 canonical / 共享文件"
+    }
+  }
+}

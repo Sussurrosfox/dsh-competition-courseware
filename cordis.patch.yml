@@ -1,0 +1,7 @@
+- insert:
+    - id: competition-courseware
+      name: '@local/competition-courseware'
+      config:
+        pythonPath: 'python'
+        uiPort: 7860
+        preloadWorkbench: true

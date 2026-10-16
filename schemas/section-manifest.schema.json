@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.skills-c-v5.local/section-manifest.schema.json",
+  "title": "SectionManifest",
+  "description": "Preflight 生成的 section 清单（§4.1 步骤 2）。校验 section 映射、题目 ID 唯一性，把四个 section 的题目列表写入本文件。为每个 S1--S4 发出独立 section-writer capability。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "brief_id",
+    "input_digest",
+    "sections"
+  ],
+  "properties": {
+    "schema_version": {"const": "2.4.0"},
+    "run_id": {
+      "type": "string",
+      "pattern": "^run-[A-Za-z0-9_-]+$"
+    },
+    "brief_id": {"type": "string", "minLength": 1},
+    "input_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "整个 manifest 的 SHA-256（不含自身）"
+    },
+    "active_question_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^P?[0-9]+$"},
+      "description": "active 题目全集（§1 既定分工）"
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "四个 section 的题目分配；每题恰属一个 section",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["section_id", "section_order", "question_ids"],
+        "properties": {
+          "section_id": {"type": "string", "pattern": "^S[0-9]+$"},
+          "section_order": {"type": "integer", "minimum": 1},
+          "question_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^P?[0-9]+$"}
+          }
+        }
+      }
+    }
+  }
+}

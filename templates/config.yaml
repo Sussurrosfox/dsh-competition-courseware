@@ -1,0 +1,103 @@
+# =============================================================================
+# 竞赛少题深研学案（v2 单源多视图版）—— 全局参数配置
+# 修改本文件后，运行:  python <skill>/scripts/gen_config.py --project <本文件所在目录>
+# 将重新生成 config-class.tex 与 config.tex（二者均为自动生成，请勿手改）；
+# views 模式下还会生成/更新各视图编译入口（student.tex / teacher.tex /
+# hint-<pid>.tex / review-<pid>.tex）。
+# 不同竞赛专题只需复制本文件改参数，无需触碰 LaTeX 模板。
+# 注意：扁平字段值为单行文本；若含冒号请用全角“：”或用双引号包裹整个值。
+# 兼容说明：不含 views 键的旧版 config.yaml 走兼容模式，gen_config 行为与
+# 旧版完全一致（只生成 config-class.tex / config.tex，不触碰入口文件）。
+# =============================================================================
+
+# --- 用户前置对齐（PHASE 0 BREAKPOINT 产物；gen_config 强制检查）---
+# 在主 agent 调用 ask_question 向用户确认三个问题后，由主 agent 填写本区块。
+# confirmed 必须为 true，否则 gen_config.py 以 exit 2 拒绝生成任何文件。
+# 本区块由主 agent 手动写入（不由脚本覆盖），是 PHASE 0 对齐的可机器核验凭证。
+user_alignment:
+  confirmed: false          # 必须改为 true 后 gen_config 才会运行
+  main_title: null          # 用户确认的学案标题（字符串；null 表示未确认）
+  lesson_mode: guided       # 教学模式（唯一取值 guided 分步引导）
+  confirmed_at: null        # ISO 8601 时间戳（如 2026-09-18T10:00:00+08:00）
+
+# --- 文档类 ---
+font_size: 12pt            # ctexart 字号选项 (10pt / 11pt / 12pt)
+
+# --- 纸张与版面几何 (geometry 宏包参数；student_initial 主视图用) ---
+paperwidth: 285mm          # 大8开标准高度（横向放置时为纵向高度）
+paperheight: 420mm         # 大8开标准宽度（横向放置时为横向宽度）
+orientation: landscape     # landscape / portrait
+margin_top: 1in
+margin_bottom: 1in
+margin_left: 1in
+margin_right: 1in
+headheight: 25pt
+
+# --- 双栏 ---
+columns: 2                 # multicols 栏数
+
+# --- 标题区 ---
+# 默认值为「竞赛学案」；具体专题标题（如「数论竞赛学案」）必须先用
+# ask_question 询问用户确认后填写，严禁自行杜撰。
+main_title: 竞赛学案
+
+# --- 页眉页脚文案 ---
+teacher_head_left: 【教师用书·参考解答与研讨组织建议】
+
+# --- 视图与分发（v2 新增；省略整个 views 键即为旧版兼容模式） ---
+# 每个视图对应一个编译入口与输出 PDF（<entry>.tex -> <entry>.pdf）；
+# 内容块经 teaching/materials.json 的 views 字段进入对应视图，
+# delivery_channel（in_main/separate_hint/separate_review/teacher_only）
+# 决定块进入哪个入口：in_main 进 student/teacher 主视图，separate_hint /
+# separate_review 进独立提示/复盘页，teacher_only 只进 teacher 视图。
+# 规则（gen_config 强制）：
+#   - 必须恰好声明 student_initial（entry=student）与 teacher（entry=teacher）
+#     两个 in_main 视图；teacher 视图自动开启 \TeacherVersion；
+#   - separate_hint 入口名须为 hint-*，separate_review 入口名须为 review-*；
+#   - separate_* 视图在 materials.json 中没有任何内容块时不生成入口文件
+#     （不生成空提示/复盘页）；
+#   - materials 块出现的视图必须在此声明，否则报错。
+views:
+  - id: student_initial      # 首轮发放视图：仅 available_after=initial 的 L0 块
+    entry: student
+    channel: in_main
+    audience: student
+  - id: teacher              # 完整教师资料视图
+    entry: teacher
+    channel: in_main
+    audience: teacher
+    teacher_flags: true
+  # 按需取消注释并替换 <pid>（与该题 problem_id 一致）：
+  # - id: hint-<pid>
+  #   entry: hint-<pid>
+  #   channel: separate_hint
+  #   audience: student
+  #   problem_id: <pid>
+  #   title: 提示页：<pid>
+  # - id: review-<pid>
+  #   entry: review-<pid>
+  #   channel: separate_review
+  #   audience: student
+  #   problem_id: <pid>
+  #   title: 复盘页：<pid>
+
+# --- 竞赛模式（少题深研；旧字段保留并兼容，导出为 \pdCompetition* 宏） ---
+# 注意：教学模式由 brief 的 lesson_mode 承载，唯一取值 guided（分步引导）；
+# 旧 practice_mode 同样只允许 guided。
+competition_mode: true                    # true 时按竞赛代表题/题组切片规范装配
+competition_min_independent_minutes: 20   # 每道代表题独立作答最少分钟数（正整数；省略该键表示不做下限检查）
+
+# --- T2 学生任务自审（默认开启；设 false 关闭）---
+# 开启时，T2 学生任务批次产物落盘后先按题派发 student-task-review 子 agent
+# 审查泄露风险/难度梯度/设问充分性/schema 合规（可定点修复），再进入核验与
+# 三重门禁。自审子 agent 持有 teacher-solution packet（完整证明视野），是
+# 唯一能判定"设问链是否抵达解"的防线，建议保持开启。
+enable_t2_self_review: true
+
+# --- R3 障碍研究/补充材料（可选；默认关闭）---
+# 默认关闭：student.pdf 与 student_solution.pdf 交付链路不消费 dossier 的
+# obstacles/supplements；关闭时 check_research 对非空 R3 产物 fail-closed 拒收。
+# 仅当交付教师版（deliver_teacher）或声明了 separate_hint/separate_review 视图、
+# 且已为这些产物打通 materials.json 消费链时才开启；开启后 check_teaching §3d
+# 对每个 R3 产物做孤儿引用闭合检查（无消费块即 fail）。
+enable_obstacle_study: false
