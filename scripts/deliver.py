@@ -145,6 +145,9 @@ def _read_checks():
         ("check_subquestion_solution",
          os.path.join(_SCRIPT_DIR, "check_subquestion_solution.py"),
          "teaching/checks/check_subquestion_solution.json"),
+        ("check_agent_audit",
+         os.path.join(_SCRIPT_DIR, "check_agent_audit.py"),
+         "teaching/checks/check_agent_audit.json"),
     ]
 
 # 构建后串行检查（依赖实际 PDF/日志）
@@ -1015,6 +1018,7 @@ def main():
                 "check_student_visibility": "可见性",
                 "check_numbering": "qid/装配",
                 "check_subquestion_solution": "小问解答",
+                "check_agent_audit": "Agent证据链",
                 "compare_versions": "可见性(PDF)",
                 "build": "版面/构建"}
     for name, (rep, rel) in sorted(reports.items()):
@@ -1234,7 +1238,7 @@ def main():
     # 不产出宣称完成的发布记录）
     keep_names = {"manifest.json"}
     for _name in artifacts:
-        keep_names.add(_name.split("/")[0])
+        keep_names.add(str(_name).replace("\\", "/").split("/")[0])
     quarantined, q_failed = _quarantine_stale_release_files(rel_dir,
                                                             keep_names)
     if q_failed:

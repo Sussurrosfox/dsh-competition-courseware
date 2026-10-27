@@ -17,6 +17,7 @@
 """
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -38,6 +39,7 @@ from ..state import CoursewareState
 from ..adapters.llm_worker import LLMWorkerAdapter
 from ..adapters.worker_registry import worker_registry
 from ..adapters.script_runner import ScriptRunner
+from . import agent_evidence
 
 REQUEST_DIR_REL = "teaching/agent-requests"
 
@@ -88,25 +90,50 @@ def build_request(
     artifacts: List[str],
     instruction: str,
     command: str,
-    context: Optional[Dict[str, Any]] = None
+    context: Optional[Dict[str, Any]] = None,
+    scope: str = "",
 ) -> Dict[str, Any]:
-    """构造一份派发单（含派发前产物摘要）。"""
+    """构造一份派发单（含派发前产物摘要与 HMAC dispatch_token）。"""
     root = state.get("project_root", ".")
-    dispatch_id = "dsp-%s-%s" % (
-        stage.lower().replace("_", "-"), uuid.uuid4().hex[:10]
+    context_dict = context or {}
+    scope_val = (
+        scope
+        or context_dict.get("scope")
+        or context_dict.get("problem_id")
+        or context_dict.get("task_id")
+        or context_dict.get("qid")
+        or ""
     )
+    scope_part = ("-%s" % str(scope_val).lower().replace("_", "-")) if scope_val else ""
+    dispatch_id = "dsp-%s%s-%s" % (
+        stage.lower().replace("_", "-"), scope_part, uuid.uuid4().hex[:8]
+    )
+    before_snap = snapshot(root, artifacts)
+    token_payload = {
+        "artifacts": list(artifacts),
+        "before": before_snap,
+        "dispatch_id": dispatch_id,
+    }
+    dispatch_token = hmac.new(
+        contract.broker_key(),
+        contract.canonical_json(token_payload).encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+
     return {
         "dispatch_id": dispatch_id,
         "stage": stage,
+        "scope": str(scope_val),
         "role": role,
+        "dispatch_token": dispatch_token,
         "prompt_file": prompt_file,
         "schema_file": schema_file,
         "artifacts": list(artifacts),
         "instruction": instruction,
         "command": command,
-        "context": context or {},
+        "context": context_dict,
         "run_id": state.get("run_id", ""),
-        "before": snapshot(root, artifacts),
+        "before": before_snap,
     }
 
 
@@ -117,10 +144,58 @@ def write_request_file(root: str, request: Dict[str, Any]) -> str:
     if abs_path is None:
         return ""
     os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-    with open(abs_path, "w", encoding="utf-8", newline="\n") as f:
+    tmp = "%s.tmp-%s" % (abs_path, uuid.uuid4().hex[:8])
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(request, f, ensure_ascii=False, indent=2)
         f.write("\n")
+    os.replace(tmp, abs_path)
     return rel
+
+
+def write_dispatch_plan(root: str, batch_id: str, requests: List[Dict[str, Any]]) -> str:
+    """原子落盘 teaching/dispatch-plan.json。"""
+    plan = {
+        "batch_id": batch_id,
+        "requests": [
+            {
+                "dispatch_id": r["dispatch_id"],
+                "stage": r.get("stage", ""),
+                "scope": r.get("scope", ""),
+                "role": r.get("role", ""),
+            }
+            for r in requests
+        ],
+    }
+    plan_path = os.path.join(root, "teaching", "dispatch-plan.json")
+    try:
+        os.makedirs(os.path.dirname(plan_path), exist_ok=True)
+        tmp = "%s.tmp-%s" % (plan_path, uuid.uuid4().hex[:8])
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(plan, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp, plan_path)
+        return plan_path
+    except OSError:
+        return ""
+
+
+def _record_dispatch_evidence(root: str, request: Dict[str, Any],
+                              worker: str, written: List[str]) -> Optional[str]:
+    """写出受信证据台账（LLM worker 路径）。"""
+    digests = {}
+    for rel in written:
+        d = sha256_file(os.path.join(root, rel.replace("/", os.sep)))
+        if d:
+            digests[rel] = d
+    return agent_evidence.write_evidence(
+        root,
+        dispatch_id=request["dispatch_id"],
+        batch_id=request.get("batch_id"),
+        worker=worker,
+        artifacts_written=written,
+        output_digests=digests,
+        status="ok",
+    )
 
 
 def _read_project_flag(project_root: str, key: str, default: bool = False) -> bool:
@@ -207,14 +282,14 @@ def _write_worker_files(root: str, request: Dict[str, Any],
 
 
 def _interrupt_payload(request: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    payload = {
         "type": "AGENT_DISPATCH",
         "dispatch_id": request["dispatch_id"],
         "stage": request["stage"],
         "role": request["role"],
         "description": (
-            "认知工位派发：%s。请产出下列文件后恢复执行；未产出或内容无变化时"
-            "流水线将中止并报告错误（不会原样重跑门禁）。" % request["instruction"]
+            "认知工位派发：%s。请由宿主 courseware_dispatch 工具派发子 Agent 执行并落证据台账；"
+            "未产出、内容无变化或缺少子 Agent 证据时流水线将拒绝放行。" % request["instruction"]
         ),
         "artifacts": request["artifacts"],
         "instruction": request["instruction"],
@@ -225,6 +300,8 @@ def _interrupt_payload(request: Dict[str, Any]) -> Dict[str, Any]:
         "before_digests": request["before"],
         "context": request.get("context", {}),
     }
+    payload.update(agent_evidence.dispatch_protocol_block())
+    return payload
 
 
 def run_dispatch(
@@ -237,6 +314,16 @@ def run_dispatch(
     """执行一份派发单：派发 worker 或人工中断，然后校验产物确已出现且已变化。"""
     root = state.get("project_root", ".")
     dispatch_id = request["dispatch_id"]
+    req_disk_path = os.path.join(root, "teaching", "agent-requests", "%s.json" % dispatch_id)
+    if os.path.isfile(req_disk_path):
+        try:
+            with open(req_disk_path, "r", encoding="utf-8") as f:
+                disk_req = json.load(f)
+                if isinstance(disk_req, dict) and disk_req.get("artifacts"):
+                    request = disk_req
+        except Exception:
+            pass
+
     artifacts: List[str] = request["artifacts"]
     history = list(state.get("history", []))
     results = dict(state.get("dispatch_results", {}))
@@ -272,7 +359,13 @@ def run_dispatch(
             return _dispatch_failure(state, results, history, success_stage,
                                      "认知 worker 调用失败: %s" % output["_error"])
         if isinstance(output, dict):
-            _write_worker_files(root, request, output.get("files") or {})
+            written = _write_worker_files(root, request, output.get("files") or {})
+            if written:
+                _record_dispatch_evidence(
+                    root, request,
+                    worker="llm-worker:%s" % (getattr(worker_registry, "name", "unknown") or "default"),
+                    written=written,
+                )
     else:
         payload = _interrupt_payload(request)
         history.append(
@@ -282,6 +375,13 @@ def run_dispatch(
         response = interrupt(payload)
         if not isinstance(response, dict):
             response = {}
+        violation = agent_evidence.dispatch_protocol_violation(response)
+        if violation:
+            results[dispatch_id] = {
+                "status": "bad_dispatch_protocol", "dispatched_via": dispatched_via
+            }
+            history.append("Agent[%s]: %s" % (request["stage"], violation))
+            return _dispatch_failure(state, results, history, success_stage, violation)
         if response.get("files"):
             _write_worker_files(root, request, response["files"])
 
@@ -312,12 +412,51 @@ def run_dispatch(
         history.append("Agent[%s]: %s" % (request["stage"], detail))
         return _dispatch_failure(state, results, history, success_stage, detail)
 
-    results[dispatch_id] = {
+    # ---- 证据链对账（零信任门禁）：产物变化必须由 teaching/agent-calls/<dispatch_id>.json 背书 ----
+    policy = agent_evidence.load_dispatch_policy(root)
+    attest_status, _evidence = agent_evidence.check_request_attested(
+        root, request, after, allow_unattested=policy["allow_unattested"]
+    )
+    if attest_status == "attested_mismatch":
+        detail = (
+            "派发 %s 的产物与代理证据不符（证据在案但摘要对不上，疑似证据落盘后产物被篡改）"
+            % dispatch_id
+        )
+        results[dispatch_id] = {
+            "status": "attested_mismatch", "dispatched_via": dispatched_via
+        }
+        history.append("Agent[%s]: %s" % (request["stage"], detail))
+        return _dispatch_failure(state, results, history, success_stage, detail)
+    if attest_status in ("EVIDENCE_FORGED", "EVIDENCE_ID_MISMATCH"):
+        detail = "派发 %s 的代理证据签名校验失败（%s）" % (dispatch_id, attest_status)
+        results[dispatch_id] = {
+            "status": attest_status, "dispatched_via": dispatched_via
+        }
+        history.append("Agent[%s]: %s" % (request["stage"], detail))
+        return _dispatch_failure(state, results, history, success_stage, detail)
+    if attest_status == "ok_unattested" and not policy["allow_unattested"]:
+        detail = (
+            "派发 %s 的产物缺少代理证据（应由 courseware_dispatch 派发子 Agent 完成，严禁主 Agent 直接撰写）"
+            % dispatch_id
+        )
+        results[dispatch_id] = {
+            "status": "ok_unattested", "dispatched_via": dispatched_via
+        }
+        history.append("Agent[%s]: %s" % (request["stage"], detail))
+        return _dispatch_failure(state, results, history, success_stage, detail)
+
+    entry = {
         "status": "ok",
         "produced": [rel for rel in artifacts if after[rel] is not None],
         "changed": [rel for rel in artifacts if after[rel] != request["before"].get(rel)],
         "dispatched_via": dispatched_via,
     }
+    if attest_status == "ok":
+        entry["verified_via"] = "agent"
+    elif attest_status == "ok_unattested":
+        entry["unattested"] = True
+
+    results[dispatch_id] = entry
     history.append("Agent[%s]: %s（派发方式 %s，产物 %s）"
                    % (request["stage"], success_history, dispatched_via,
                       ", ".join(artifacts)))
@@ -391,6 +530,8 @@ def run_batch_dispatch(
         history.append("Agent[%s]: %s" % (sheet["stage"], detail))
         return _dispatch_failure(state, results, history, success_stage, detail)
 
+    policy = agent_evidence.load_dispatch_policy(root)
+
     if pending and all(worker_registry.available_for_role(r["role"]) for r in pending):
         dispatched_via = "worker"
         for sheet in pending:
@@ -418,7 +559,13 @@ def run_batch_dispatch(
                              % (sheet["dispatch_id"], output["_error"]),
                              {"detail": output["_error"]})
             if isinstance(output, dict):
-                _write_worker_files(root, sheet, output.get("files") or {})
+                written = _write_worker_files(root, sheet, output.get("files") or {})
+                if written:
+                    _record_dispatch_evidence(
+                        root, sheet,
+                        worker="llm-worker:%s" % (getattr(worker_registry, "name", "unknown") or "default"),
+                        written=written,
+                    )
             # 每 sheet 调用后立刻校验该 sheet 产物
             check = _validate_sheet(root, sheet)
             if check["missing"]:
@@ -432,13 +579,34 @@ def run_batch_dispatch(
                              "拒绝无变更重试"
                              % (sheet["dispatch_id"], ", ".join(check["unchanged"])),
                              {"unchanged": check["unchanged"]})
-            results[sheet["dispatch_id"]] = {
+
+            # 证据对账
+            attest_status, _ev = agent_evidence.check_request_attested(
+                root, sheet, check["after"], allow_unattested=policy["allow_unattested"]
+            )
+            if attest_status == "attested_mismatch":
+                return _fail(sheet, "attested_mismatch",
+                             "派发 %s 的产物与代理证据不符（证据在案但摘要对不上）" % sheet["dispatch_id"])
+            if attest_status in ("EVIDENCE_FORGED", "EVIDENCE_ID_MISMATCH"):
+                return _fail(sheet, attest_status,
+                             "派发 %s 的代理证据签名校验失败（%s）" % (sheet["dispatch_id"], attest_status))
+            if attest_status == "ok_unattested" and not policy["allow_unattested"]:
+                return _fail(sheet, "ok_unattested",
+                             "派发 %s 的产物缺少代理证据（应由 courseware_dispatch 派发子 Agent 完成）"
+                             % sheet["dispatch_id"])
+
+            entry = {
                 "status": "ok",
                 "produced": [rel for rel in sheet["artifacts"] if check["after"][rel] is not None],
                 "changed": [rel for rel in sheet["artifacts"]
                             if check["after"][rel] != sheet["before"].get(rel)],
                 "dispatched_via": dispatched_via,
             }
+            if attest_status == "ok":
+                entry["verified_via"] = "agent"
+            elif attest_status == "ok_unattested":
+                entry["unattested"] = True
+            results[sheet["dispatch_id"]] = entry
             history.append("Agent[%s]: 派发 %s 完成（派发方式 %s，产物 %s）"
                            % (sheet["stage"], sheet["dispatch_id"], dispatched_via,
                               ", ".join(sheet["artifacts"])))
@@ -449,6 +617,7 @@ def run_batch_dispatch(
             "stage": state.get("batch_stage") or pending[0]["stage"],
             "sheets": [_interrupt_payload(r) for r in pending],
         }
+        payload.update(agent_evidence.dispatch_protocol_block())
         history.append(
             "Agent[%s]: 未注入认知 worker，挂起等待人工 / Antigravity 产出 %d 份派发单的产物"
             % (payload["stage"], len(pending))
@@ -456,8 +625,28 @@ def run_batch_dispatch(
         response = interrupt(payload)
         if not isinstance(response, dict):
             response = {}
+
+        violation = agent_evidence.dispatch_protocol_violation(response)
+        if violation:
+            for sheet in pending:
+                results[sheet["dispatch_id"]] = {
+                    "status": "bad_dispatch_protocol", "dispatched_via": dispatched_via
+                }
+            history.append("Agent[%s]: %s" % (payload["stage"], violation))
+            return _dispatch_failure(state, results, history, success_stage, violation)
+
         files = response.get("files")
         for sheet in pending:
+            req_disk_path = os.path.join(root, "teaching", "agent-requests", "%s.json" % sheet["dispatch_id"])
+            if os.path.isfile(req_disk_path):
+                try:
+                    with open(req_disk_path, "r", encoding="utf-8") as f:
+                        disk_req = json.load(f)
+                        if isinstance(disk_req, dict) and disk_req.get("artifacts"):
+                            sheet = disk_req
+                except Exception:
+                    pass
+
             if files:
                 # _write_worker_files 按单 sheet 的产物白名单过滤，逐 sheet 调用
                 _write_worker_files(root, sheet, files)
@@ -473,13 +662,34 @@ def run_batch_dispatch(
                              "拒绝无变更重试"
                              % (sheet["dispatch_id"], ", ".join(check["unchanged"])),
                              {"unchanged": check["unchanged"]})
-            results[sheet["dispatch_id"]] = {
+
+            # 证据对账
+            attest_status, _ev = agent_evidence.check_request_attested(
+                root, sheet, check["after"], allow_unattested=policy["allow_unattested"]
+            )
+            if attest_status == "attested_mismatch":
+                return _fail(sheet, "attested_mismatch",
+                             "派发 %s 的产物与代理证据不符（证据在案但摘要对不上）" % sheet["dispatch_id"])
+            if attest_status in ("EVIDENCE_FORGED", "EVIDENCE_ID_MISMATCH"):
+                return _fail(sheet, attest_status,
+                             "派发 %s 的代理证据签名校验失败（%s）" % (sheet["dispatch_id"], attest_status))
+            if attest_status == "ok_unattested" and not policy["allow_unattested"]:
+                return _fail(sheet, "ok_unattested",
+                             "派发 %s 的产物缺少代理证据（应由 courseware_dispatch 派发子 Agent 完成）"
+                             % sheet["dispatch_id"])
+
+            entry = {
                 "status": "ok",
                 "produced": [rel for rel in sheet["artifacts"] if check["after"][rel] is not None],
                 "changed": [rel for rel in sheet["artifacts"]
                             if check["after"][rel] != sheet["before"].get(rel)],
                 "dispatched_via": dispatched_via,
             }
+            if attest_status == "ok":
+                entry["verified_via"] = "agent"
+            elif attest_status == "ok_unattested":
+                entry["unattested"] = True
+            results[sheet["dispatch_id"]] = entry
             history.append("Agent[%s]: 派发 %s 完成（派发方式 %s，产物 %s）"
                            % (sheet["stage"], sheet["dispatch_id"], dispatched_via,
                               ", ".join(sheet["artifacts"])))
@@ -571,10 +781,12 @@ def node_t2_request_student_task(state: CoursewareState) -> Dict[str, Any]:
         }
 
     sheets: List[Dict[str, Any]] = []
+    batch_id = "batch-t2-student-task-%s" % uuid.uuid4().hex[:8]
     for tid in expected_tasks:
         sheet = build_request(
             state,
             stage="T2_STUDENT_TASK",
+            scope=str(tid),
             role="student-task",
             prompt_file="student-task.md",
             schema_file="student-task.schema.json",
@@ -596,8 +808,10 @@ def node_t2_request_student_task(state: CoursewareState) -> Dict[str, Any]:
                 "receipts_dir": "staging/%s/receipts" % run_id,
             }
         )
+        sheet["batch_id"] = batch_id
         write_request_file(project_root, sheet)
         sheets.append(sheet)
+    write_dispatch_plan(project_root, batch_id, sheets)
     history = list(state.get("history", []))
     history.append("T2: 已按题派发学生任务设计（%d 份派发单，任务 %s）"
                    % (len(sheets), expected_tasks))
@@ -689,10 +903,12 @@ def node_t2_review_request(state: CoursewareState) -> Dict[str, Any]:
 
     # 2. 组装批次派发单
     sheets: List[Dict[str, Any]] = []
+    batch_id = "batch-t2-review-%s" % uuid.uuid4().hex[:8]
     for tid in expected_tasks:
         sheet = build_request(
             state,
             stage="T2_REVIEW",
+            scope=str(tid),
             role="student-task-review",
             prompt_file="student-task-review.md",
             schema_file="student-task.schema.json",
@@ -728,8 +944,10 @@ def node_t2_review_request(state: CoursewareState) -> Dict[str, Any]:
                 "teacher_packet_ref": teacher_packet_refs[tid],
             }
         )
+        sheet["batch_id"] = batch_id
         write_request_file(project_root, sheet)
         sheets.append(sheet)
+    write_dispatch_plan(project_root, batch_id, sheets)
     history.append("T2 自审: 已按题派发学生任务审查（%d 份派发单，任务 %s）"
                    % (len(sheets), expected_tasks))
     return {
@@ -849,10 +1067,12 @@ def node_rb_probe_request(state: CoursewareState) -> Dict[str, Any]:
 
     gate_issues = _gate_issue_messages(state.get("research_gate"))
     sheets: List[Dict[str, Any]] = []
+    batch_id = "batch-rb-probe-%s" % uuid.uuid4().hex[:8]
     for qid in selected:
         sheet = build_request(
             state,
             stage="RB_PROBE",
+            scope=str(qid),
             role="probe",
             prompt_file="probe-agent.md",
             schema_file="probe.schema.json",
@@ -872,8 +1092,10 @@ def node_rb_probe_request(state: CoursewareState) -> Dict[str, Any]:
                 "qid": qid,
             }
         )
+        sheet["batch_id"] = batch_id
         write_request_file(project_root, sheet)
         sheets.append(sheet)
+    write_dispatch_plan(project_root, batch_id, sheets)
     history = list(state.get("history", []))
     history.append("Research-Back: 已按题派发探针重做（%d 份派发单，题目 %s）"
                    % (len(sheets), selected))
@@ -921,10 +1143,12 @@ def node_rb_solver_request(state: CoursewareState) -> Dict[str, Any]:
 
     gate_issues = _gate_issue_messages(state.get("research_gate"))
     sheets: List[Dict[str, Any]] = []
+    batch_id = "batch-rb-solver-%s" % uuid.uuid4().hex[:8]
     for qid in selected:
         sheet = build_request(
             state,
             stage="RB_SOLVER",
+            scope=str(qid),
             role="solver",
             prompt_file="solver-agent.md",
             schema_file="solution.schema.json",
@@ -947,8 +1171,10 @@ def node_rb_solver_request(state: CoursewareState) -> Dict[str, Any]:
                 "pitfall_ref": "research/problems/%s/pitfall.json" % qid,
             }
         )
+        sheet["batch_id"] = batch_id
         write_request_file(project_root, sheet)
         sheets.append(sheet)
+    write_dispatch_plan(project_root, batch_id, sheets)
     history = list(state.get("history", []))
     history.append("Research-Back: 已按题派发重新研学（%d 份派发单，题目 %s）"
                    % (len(sheets), selected))
@@ -1148,10 +1374,12 @@ def node_t2_request_subquestion_solutions(state: CoursewareState) -> Dict[str, A
 
     # 2. 组装批次派发单（Sheets）
     sheets: List[Dict[str, Any]] = []
+    batch_id = "batch-subquestion-solutions-%s" % uuid.uuid4().hex[:8]
     for tid in expected_tasks:
         sheet = build_request(
             state,
             stage="T2_SUBQUESTION_SOLUTIONS",
+            scope=str(tid),
             role="subquestion-solver",
             prompt_file="subquestion-solution.md",
             schema_file="solution-task.schema.json",
@@ -1170,9 +1398,11 @@ def node_t2_request_subquestion_solutions(state: CoursewareState) -> Dict[str, A
                 "receipts_dir": f"staging/{run_id}/solution-receipts",
             }
         )
+        sheet["batch_id"] = batch_id
         write_request_file(project_root, sheet)
         sheets.append(sheet)
 
+    write_dispatch_plan(project_root, batch_id, sheets)
     history.append(f"T2.5: 已为 {len(sheets)} 个任务派发各小问参考解答撰写单")
     return {
         "stage": "T2_SOLUTIONS_PENDING",

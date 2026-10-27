@@ -409,26 +409,118 @@ _BROKER_KEY_ENV = "SKILLS_BROKER_KEY"
 _BROKER_KEY_REL = os.path.join("~", ".skills-broker", "broker.key")
 
 
+def _dpapi_protect(data: bytes) -> bytes:
+    import ctypes
+    import ctypes.wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", ctypes.wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+    blob_in = DATA_BLOB(len(data), ctypes.cast(ctypes.create_string_buffer(data), ctypes.POINTER(ctypes.c_byte)))
+    blob_out = DATA_BLOB()
+    if not ctypes.windll.crypt32.CryptProtectData(ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)):
+        raise ctypes.WinError()
+    res = ctypes.string_at(blob_out.pbData, blob_out.cbData)
+    ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+    return res
+
+
+def _dpapi_unprotect(data: bytes) -> bytes:
+    import ctypes
+    import ctypes.wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", ctypes.wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+    blob_in = DATA_BLOB(len(data), ctypes.cast(ctypes.create_string_buffer(data), ctypes.POINTER(ctypes.c_byte)))
+    blob_out = DATA_BLOB()
+    if not ctypes.windll.crypt32.CryptUnprotectData(ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)):
+        raise ctypes.WinError()
+    res = ctypes.string_at(blob_out.pbData, blob_out.cbData)
+    ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+    return res
+
+
 def broker_key() -> bytes:
-    """读取 broker 签名密钥（env 优先，其次工作区外密钥文件）。"""
+    """读取 broker 签名密钥（env 优先，其次工作区外密钥文件，Windows 支持 DPAPI 加固）。"""
     env = os.environ.get(_BROKER_KEY_ENV)
     if env:
         return env.encode("utf-8")
     path = os.path.expanduser(_BROKER_KEY_REL)
-    if os.path.isfile(path):
-        with open(path, "rb") as f:
-            data = f.read().strip()
-        if data:
-            return data
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    key = hashlib.sha256(os.urandom(64)).hexdigest().encode("ascii")
-    with open(path, "wb") as f:
-        f.write(key)
-    try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
-    return key
+    dpapi_path = path + ".dpapi"
+    is_windows = (sys.platform == "win32")
+
+    if is_windows:
+        # 1. 优先读取 DPAPI 加密密钥
+        if os.path.isfile(dpapi_path):
+            try:
+                with open(dpapi_path, "rb") as f:
+                    enc_data = f.read().strip()
+                if enc_data:
+                    data = _dpapi_unprotect(enc_data).strip()
+                    if data:
+                        return data
+            except Exception:
+                pass
+
+        # 2. 回退读取明文 broker.key，并触发一次惰性迁移（写 dpapi，保留明文）
+        if os.path.isfile(path):
+            try:
+                with open(path, "rb") as f:
+                    data = f.read().strip()
+                if data:
+                    try:
+                        enc = _dpapi_protect(data)
+                        with open(dpapi_path, "wb") as f_out:
+                            f_out.write(enc)
+                    except Exception:
+                        pass
+                    return data
+            except OSError:
+                pass
+
+        # 3. 首次使用生成新密钥并以 DPAPI 存储
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        key = hashlib.sha256(os.urandom(64)).hexdigest().encode("ascii")
+        try:
+            enc = _dpapi_protect(key)
+            with open(dpapi_path, "wb") as f:
+                f.write(enc)
+            # 同时写入明文 broker.key 兼容外部工具/Node 宿主
+            with open(path, "wb") as f:
+                f.write(key)
+        except Exception:
+            with open(path, "wb") as f:
+                f.write(key)
+        return key
+    else:
+        # 非 Windows 分支
+        if os.path.isfile(path):
+            try:
+                if hasattr(os, "stat"):
+                    mode = os.stat(path).st_mode
+                    if mode & 0o077:
+                        import warnings
+                        warnings.warn(
+                            f"broker key file {path} has insecure permissions {oct(mode)}",
+                            RuntimeWarning
+                        )
+            except Exception:
+                pass
+            with open(path, "rb") as f:
+                data = f.read().strip()
+            if data:
+                return data
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        key = hashlib.sha256(os.urandom(64)).hexdigest().encode("ascii")
+        with open(path, "wb") as f:
+            f.write(key)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+        return key
 
 
 def sign_payload(payload: dict) -> str:

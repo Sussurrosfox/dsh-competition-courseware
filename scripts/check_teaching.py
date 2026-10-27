@@ -274,6 +274,16 @@ def check(root, initial_view=DEFAULT_INITIAL_VIEW):
                 "blocks_checked": 0, "reveal_entries": 0,
                 "initial_view": initial_view}
 
+    # ---- NB5 输入守卫：目标目录不像项目根（无 teaching/）→ error，不写报告 ----
+    _tdir = os.path.join(root, "teaching")
+    if not os.path.isdir(_tdir):
+        fatal.append(
+            "目标目录不像竞赛教研项目根：缺少 teaching/ 目录（%s）。"
+            "请确认 project_root 指向含 teaching/ 与 research/ 的教研项目根；"
+            "本检查拒绝在非项目目录写入门禁报告。" % _tdir
+        )
+        return fails, reviews, infos, evidence, fatal
+
     # ---- 0. 用户前置对齐核验（PHASE 0 BREAKPOINT 握手产物）----
     # teaching/user-spec.json 必须存在且 confirmed == true；
     # 不存在意味着主 agent 未向用户提出强制问题便直接进入 T0，直接 fail。
@@ -762,6 +772,13 @@ def main():
                 + [_finding("fail", m) for m in fails]
                 + [_finding("review", m) for m in reviews]
                 + [_finding("info", m) for m in infos])
+    if fatal:
+        # NB5: 输入缺失/不可读（如误传非项目目录）时，仅打印到 stdout，
+        # 不在目标目录创建 teaching/checks/ 空壳目录（零副作用）。
+        for m in fatal:
+            print("[check_teaching] [错误] " + m)
+        print("[check_teaching] status=error，输入缺失，未写入报告")
+        return 2
     report_path = args.json or os.path.join(root, DEFAULT_REPORT)
     report = contract.write_check_report(report_path, status, "teaching",
                                          findings)

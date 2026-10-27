@@ -147,8 +147,9 @@ python launcher.py --cli --visualize
 
 - **自动化安装与加载**：通过 Harness `plugin_manager` 即可一键挂载到当前 Profile，支持热重载 (HMR)。
 - **专属 Agent 工具 (Host Tools)**：
+  - `courseware_dispatch`：【核心安全工具】派发独立子 Agent（Subagent）执行认知工位（架构/任务/探针/解答/自审），支持并发队列控制、产物白名单校验、原子写入与带 HMAC 签名的代理证据台账记录（`teaching/agent-calls/<dispatch_id>.json`）。
   - `courseware_pipeline`：以结构化参数控制流水线生命周期（`status` / `run` / `resume` / `visualize`），深度适配 Phase 0 人工授权码安全机制。
-  - `courseware_gate`：一键触发全量或定向教研安全门禁检查（`probe`, `solution`, `architect`, `student_visibility`, `section_ownership`, `numbering`, `teaching` 等）。
+  - `courseware_gate`：一键触发全量或定向教研安全门禁检查（`agent_audit`, `probe`, `solution`, `architect`, `student_visibility`, `section_ownership`, `numbering`, `teaching` 等）。
   - `courseware_workbench`：从聊天会话直接拉起、监控或停止 Gradio 可视化教研工作台。
 - **用户指令 (Human Slash Command)**：
   - `/courseware status`：随时在输入框查询流水线当前检查点与阶段。

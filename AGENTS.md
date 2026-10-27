@@ -103,6 +103,15 @@ references/          # 流程引用文档（research-workflow、courseware-workf
 `pending_dispatch_batch`、`batch_stage`、`rb_phase`、`t2_self_review`
 （均为可选；节点返回 None 以清空）。
 
+### 多 Agent 证据链协议（`host-subagent-v1`）与零信任门禁
+
+- **认知工位物理隔离**：所有认知工位（T1 架构计划、T2 学生任务、RB 探针与解答重做、定点返修）均通过派发单（`teaching/agent-requests/<dispatch_id>.json`）与批次计划（`.pd/dispatch-plan.json`）执行。
+- **派发工具 `courseware_dispatch`**：子 Agent 在独立上下文中运行，产物以 JSON 回复；宿主执行白名单校验、原子写入，并利用 Windows DPAPI / Broker 密钥计算 HMAC 签名，写入证据台账（`teaching/agent-calls/<dispatch_id>.json`）。
+- **双重拦截（运行时 + 交付前门禁）**：
+  1. 状态机运行时：`agent_nodes.py` 恢复与续跑时调用 `agent_evidence.check_request_attested`，无证据的修改一律判定 `ok_unattested`，状态机拒绝推进并抛出违规异常；被篡改的产物判定 `attested_mismatch`。
+  2. 交付前门禁：`check_agent_audit.py` 纳入 `deliver.py` 的全量门禁流水线及 `courseware_gate` 工具。发现无证据台账的产物或伪造签名直接阻断交付。
+- **逃生阀（`allow_unattested`）**：默认关闭（`false`）；仅在开发调试场景下通过 `config.yaml` 或 `--allow-unattested` 开启，开启时仅记 `review/warn` 不阻断。
+
 ### Phase 0 人工授权码（auth token）
 
 - `node_phase0_breakpoint` 挂起前在 `<project>/.langgraph/phase0_token.txt`

@@ -94,7 +94,11 @@ def _check_task_id(task_id):
     return None
 
 # run_gates 必经检查清单：(名称, 脚本名, 报告项目相对路径, 是否需 PDF 构建)
+# check_agent_audit 置首位：零信任写入者身份是所有教学结论的前置硬卡点，
+# 缺代理证据（ok_unattested / 伪造台账 / 摘要不符）直接记 overall=fail。
 GATE_CHECKS = (
+    ("check_agent_audit", "check_agent_audit.py",
+     "teaching/checks/check_agent_audit.json", False),
     ("check_research", "check_research.py",
      "research/checks/check_research.json", False),
     ("check_architect", "check_architect.py",
@@ -853,18 +857,21 @@ def cmd_run_gates(root, args):
         print("[broker] %s" % err)
         return 2
 
-    # 干净代码副本：scripts/ + schemas/ 复制到 staging/<run_id>/gates/code/
+    # 干净代码副本：scripts/ + schemas/ + workflow/ 复制到 staging/<run_id>/gates/code/
+    # （workflow/ 必须随副本：check_agent_audit / check_research 的台账对账依赖
+    #   workflow/nodes/agent_evidence.py，否则干净副本内 import 失败）
     code_dir = os.path.join(paths["gates"], "code")
     if os.path.isdir(code_dir):
         shutil.rmtree(code_dir)
     os.makedirs(code_dir, exist_ok=True)
-    for sub in ("scripts", "schemas"):
+    for sub in ("scripts", "schemas", "workflow"):
         src = os.path.normpath(os.path.join(_SCRIPT_DIR, "..", sub))
         dst = os.path.join(code_dir, sub)
         shutil.copytree(src, dst, ignore=shutil.ignore_patterns(
             "__pycache__", "*.pyc"))
     digest_info = contract.code_digest([os.path.join(code_dir, "scripts"),
-                                        os.path.join(code_dir, "schemas")])
+                                        os.path.join(code_dir, "schemas"),
+                                        os.path.join(code_dir, "workflow")])
     print("[broker] 门禁代码副本摘要: %s" % digest_info["digest"][:16])
 
     # 门禁前预置规范路径（broker 独占写入）；失败轮次回滚

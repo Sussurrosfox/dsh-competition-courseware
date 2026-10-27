@@ -48,6 +48,16 @@ PASS/REVISE/NEEDS_EVIDENCE 由审查者凭材料证据给出）。
   8. open_items 中 blocks_handoff=true → review 提示（机器无法判定
      "相应部分"范围，须人工/审查逐项处置）。
 
+   9. 子 Agent 证据对账（host-subagent-v1）：每个入选题三件套
+      （probe / pitfall / solution）的 execution_metadata.dispatch_id
+      必须在 teaching/agent-calls/<dispatch_id>.json 台账中在案、HMAC
+      验签通过、worker 为子 Agent 身份（subagent: / llm-worker: 前缀），
+      且台账 output_digests 与产物磁盘 sha256 逐字节一致；三件套
+      dispatch_id 必须互异。缺字段 / 无台账 / 伪造签名 / 摘要不一致
+      → fail（[MISSING_EXECUTION_METADATA] / [UNATTESTED_ARTIFACT] /
+      [EVIDENCE_FORGED] / [EVIDENCE_STALE]）。legacy 旁路：仅当显式
+      设置 SKILLS_BRAIN_DIR 时，UUID 形态 ID 走 Antigravity brain 嗅探。
+
 输出：write_check_report 格式（status ∈ pass/fail/review/error），
 默认落盘 research/checks/check_research.json，--json 可覆盖。
 
@@ -74,6 +84,40 @@ sys.path.insert(0, os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "..",
                                                  "shared")))
 import contract  # noqa: E402
 
+# agent_evidence 位于 workflow/nodes/（host-subagent-v1 证据链模块）。
+# 插件目录内运行走包内 import；被复制到干净代码副本（broker run_gates 的
+# staging/<run_id>/gates/code/scripts/，只含 scripts/ 与 schemas/）时，按
+# 文件路径从插件根回退加载。
+_PLUGIN_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, ".."))
+_EVIDENCE_NODES_DIR = os.path.join(_PLUGIN_ROOT, "workflow", "nodes")
+if _EVIDENCE_NODES_DIR not in sys.path:
+    sys.path.insert(0, _EVIDENCE_NODES_DIR)
+
+
+def _import_agent_evidence():
+    try:
+        import agent_evidence as _ae
+        return _ae
+    except Exception:
+        pass
+    import importlib.util
+    for _cand in (
+        os.path.join(_EVIDENCE_NODES_DIR, "agent_evidence.py"),
+        os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "..", "workflow",
+                                      "nodes", "agent_evidence.py")),
+    ):
+        if os.path.isfile(_cand):
+            _spec = importlib.util.spec_from_file_location(
+                "competition_courseware_agent_evidence", _cand)
+            _mod = importlib.util.module_from_spec(_spec)
+            _spec.loader.exec_module(_mod)
+            return _mod
+    raise ImportError("agent_evidence 模块不可用（插件根: %s）" % _PLUGIN_ROOT)
+
+
+agent_evidence = _import_agent_evidence()
+load_evidence_with_status = agent_evidence.load_evidence_with_status
+
 RESEARCH_DIR = "research"
 DEFAULT_REPORT = os.path.join(RESEARCH_DIR, "checks", "check_research.json")
 # 真实试教来源的路径约定（classroom_observation 的证据必须来自此类路径）
@@ -84,12 +128,19 @@ PILOT_TOKENS = ("pilot", "trial")
 _UUID_RE = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 )
-# Antigravity 子会话本地存储根目录（每次真实 invoke_subagent 均在此创建子目录）
-# 可用环境变量 SKILLS_BRAIN_DIR 覆盖根目录（测试/CI 隔离；默认仍为平台目录）。
-_AGY_BRAIN_DIR = os.environ.get(
-    "SKILLS_BRAIN_DIR",
-    os.path.join(os.path.expanduser("~"), ".gemini", "antigravity-cli",
-                 "brain"))
+# Antigravity 子会话本地存储根目录（legacy 旁路专用）。
+# 注意：仅当运维**显式**设置 SKILLS_BRAIN_DIR 时才启用 brain 嗅探旁路；
+# 未设置时（DSH 宿主默认形态）一律走 teaching/agent-calls 签名台账对账。
+_AGY_BRAIN_DIR_RAW = os.environ.get("SKILLS_BRAIN_DIR", "").strip()
+_AGY_BRAIN_DIR = _AGY_BRAIN_DIR_RAW or os.path.join(
+    os.path.expanduser("~"), ".gemini", "antigravity-cli", "brain")
+#: 允许作为合法写入者身份记录的 worker 前缀（courseware_dispatch / 进程内 worker）
+_WORKER_PREFIXES = ("subagent:", "llm-worker:")
+
+
+def _legacy_brain_mode() -> bool:
+    """是否启用 Antigravity brain 嗅探旁路（仅显式设置 SKILLS_BRAIN_DIR）。"""
+    return bool(_AGY_BRAIN_DIR_RAW)
 
 
 def _verify_subagent_id(conv_id):
@@ -139,6 +190,71 @@ def _verify_subagent_id(conv_id):
     return True, "ok"
 
 
+def _verify_artifact_evidence(root, pid, role, rel, doc):
+    """台账化子 Agent 身份对账（host-subagent-v1）。
+
+    三层核验：
+      1. execution_metadata.dispatch_id 存在（courseware_dispatch 派发单 ID）；
+      2. teaching/agent-calls/<dispatch_id>.json 台账在案、HMAC 验签通过、worker
+         为子 Agent 身份（subagent: / llm-worker: 前缀）；
+      3. 摘要一致：台账 output_digests[rel] 与产物当前磁盘 sha256 逐字节相等。
+
+    返回 (ok, reason, detail)；detail 为审计用 dict（dispatch_id/worker/provider/model）。
+    """
+    meta = doc.get("execution_metadata")
+    if not isinstance(meta, dict) or not meta:
+        return False, "missing_execution_metadata", None
+
+    dispatch_id = meta.get("dispatch_id")
+    if not dispatch_id or not str(dispatch_id).strip():
+        # 兼容旧字段名（Antigravity 时代由子 Agent 自填会话 ID）
+        dispatch_id = meta.get("subagent_conversation_id")
+    if not dispatch_id or not str(dispatch_id).strip():
+        return False, "missing_dispatch_id", None
+    dispatch_id = str(dispatch_id).strip()
+
+    # legacy 旁路：显式设置 SKILLS_BRAIN_DIR 且 ID 为 UUID 时走 brain 嗅探
+    if _legacy_brain_mode() and _UUID_RE.match(dispatch_id.lower()):
+        ok, reason = _verify_subagent_id(dispatch_id)
+        return ok, ("ok" if ok else reason), {"dispatch_id": dispatch_id,
+                                              "legacy": True}
+
+    ev, err = load_evidence_with_status(root, dispatch_id)
+    if err == "EVIDENCE_MISSING":
+        return False, "evidence_missing", {"dispatch_id": dispatch_id}
+    if err == "EVIDENCE_FORGED":
+        return False, "EVIDENCE_FORGED", {"dispatch_id": dispatch_id}
+    if err == "EVIDENCE_ID_MISMATCH":
+        return False, "EVIDENCE_ID_MISMATCH", {"dispatch_id": dispatch_id}
+
+    if str(ev.get("status") or "") != "ok":
+        return False, "evidence_status_not_ok", {"dispatch_id": dispatch_id}
+    worker = str(ev.get("worker") or "")
+    if not any(worker.startswith(p) for p in _WORKER_PREFIXES):
+        return False, "evidence_worker_invalid", {"dispatch_id": dispatch_id,
+                                                  "worker": worker}
+
+    digests = ev.get("output_digests")
+    if not isinstance(digests, dict) or rel not in digests:
+        return False, "evidence_artifact_not_recorded", {"dispatch_id": dispatch_id}
+    written = ev.get("artifacts_written")
+    if isinstance(written, list) and written \
+            and rel not in [str(w) for w in written]:
+        # 台账声明了写入清单却不含本产物 → 未登记（清单缺省为空时以摘要对账为准）
+        return False, "evidence_artifact_not_recorded", {"dispatch_id": dispatch_id}
+
+    disk_sha = contract.sha256_file(contract.resolve_path(root, rel) or "")
+    if not disk_sha or disk_sha.lower() != str(digests.get(rel) or "").lower():
+        return False, "evidence_stale", {"dispatch_id": dispatch_id}
+
+    return True, "ok", {
+        "dispatch_id": dispatch_id,
+        "worker": worker,
+        "provider": ev.get("provider") or "",
+        "model": ev.get("model") or "",
+    }
+
+
 def load_json(root, rel):
     """读取 JSON 文件；返回 (doc, error)。文件缺失或 JSON 错误为输入错误。"""
     abs_path = contract.resolve_path(root, rel)
@@ -164,7 +280,7 @@ def check(root):
     fails, reviews, fatal = [], [], []
     evidence = {"selected_problem_ids": [], "reviews_checked": [],
                 "claims_checked": 0, "supplements_checked": 0,
-                "task_time_total": None}
+                "task_time_total": None, "agent_evidence": []}
 
     rdir = os.path.join(root, RESEARCH_DIR)
     if not os.path.isdir(rdir):
@@ -247,16 +363,18 @@ def check(root):
                                        "info_id"):
         fails.append("brief.reveal_plan 中 info_id 重复: %s" % d)
 
-    # ---- 1b. 子 Agent 认知隔离核验（三重门禁）----
-    # 【v2.3 Secure Upgrade】对每个入选题的三件套（probe / pitfall / solution）：
-    #   第一层：UUID 格式校验 — 非 RFC 4122 UUID 字符串直接判定伪造
-    #   第二层：本地物理存在性校验 — Brain 目录无对应子会话目录 → 判定伪造
-    #   第三层：互不重复校验 — 三件套 ID 相同 → 判定主进程代劳
-    # 【CRITICAL】字段不存在或 null → 不再跳过，直接强制失败！删除所有兼容旁路。
+    # ---- 1b. 子 Agent 认知隔离核验（host-subagent-v1 台账对账，三重门禁）----
+    # 对每个入选题的三件套（probe / pitfall / solution）：
+    #   第一层：execution_metadata.dispatch_id 存在（缺字段/空值 → 强制失败）
+    #   第二层：teaching/agent-calls/<dispatch_id>.json 台账在案、HMAC 验签通过、
+    #   worker 为子 Agent 身份（subagent: / llm-worker: 前缀）
+    #   第三层：摘要一致（台账 output_digests 与产物磁盘 sha256 逐字节相等）
+    #          + 三件套 dispatch_id 互异（同一 ID 复用 → 判定主进程代劳）
+    # 【CRITICAL】字段不存在或 null → 不再跳过，直接强制失败；删除所有兼容旁路。
+    # legacy 旁路：显式设置 SKILLS_BRAIN_DIR 时，UUID 形态 ID 走 Antigravity
+    # brain 嗅探（保留旧宿主兼容），其余一律台账对账。
     for pid in selected:
         _conv_ids = {}
-        _execution_missing = False
-        
         for _role, _rel in (
             ("probe",   "research/problems/%s/probe.json" % pid),
             ("pitfall", "research/problems/%s/pitfall.json" % pid),
@@ -265,72 +383,107 @@ def check(root):
             _doc, _err = load_json(root, _rel)
             if _err or _doc is None:
                 continue
-            
-            # === CRITICAL: 强制执行 metadata 存在性检查 ===
-            _meta = _doc.get("execution_metadata")
-            if not isinstance(_meta, dict) or not _meta:
-                fails.append(
-                    "[MISSING_EXECUTION_METADATA] 题目 %s (%s) 缺少 execution_metadata 字段。"
-                    "§9 v2.3 Secure Upgrade: 所有输出必须包含真实子 Agent 调用证据。"
-                    "请通过 invoke_subagent 生成该文件，并填充 subagent_conversation_id 为真实 UUID。"
-                    % (pid, _role)
-                )
-                _execution_missing = True
-                continue  # 跳过后续检查，因为基础元数据缺失
-            
-            _cid = _meta.get("subagent_conversation_id")
-            
-            # === CRITICAL: 禁止空值或空字符串 ===
-            if not _cid or str(_cid).strip() == "":
-                fails.append(
-                    "[EMPTY_SUBAGENT_CONVERSATION_ID] 题目 %s (%s) 的 execution_metadata.subagent_conversation_id 为空。"
-                    "§9 v2.3 Secure Upgrade: 必须填写真实 invoke_subagent 生成的 RFC 4122 UUID。"
-                    "不允许填写 null、空字符串或占位符（如 \"self\"、\"main\"）。"
-                    % (pid, _role)
-                )
-                _execution_missing = True
-                continue
 
-            # === 第一层：UUID 格式校验 ===
-            _ok, _reason = _verify_subagent_id(_cid)
+            _ok, _reason, _detail = _verify_artifact_evidence(
+                root, pid, _role, _rel, _doc)
+
             if not _ok:
-                if _reason == "non_uuid_format":
+                if _reason == "missing_execution_metadata":
                     fails.append(
-                        "[FORGED_SUBAGENT_CALL] 题目 %s (%s) 的 "
-                        "subagent_conversation_id=%r 不是合法 UUID 格式 "
-                        "（期望 8-4-4-4-12 十六进制，RFC 4122）。"
+                        "[MISSING_EXECUTION_METADATA] 题目 %s (%s) 缺少 execution_metadata 字段。"
+                        "所有研究产物必须包含真实派发证据。"
+                        "请通过 courseware_dispatch 派发子 Agent 生成该文件"
+                        "（派发单 ID 会写入 execution_metadata.dispatch_id）。"
+                        % (pid, _role)
+                    )
+                elif _reason == "missing_dispatch_id":
+                    fails.append(
+                        "[EMPTY_SUBAGENT_CONVERSATION_ID] 题目 %s (%s) 的 execution_metadata 未提供 dispatch_id。"
+                        "必须填写 courseware_dispatch 真实派发产生的派发单 ID；"
+                        "不允许填写 null、空字符串或占位符（如 \"self\"、\"main\"）。"
+                        % (pid, _role)
+                    )
+                elif _reason == "evidence_missing":
+                    fails.append(
+                        "[UNATTESTED_ARTIFACT] 题目 %s (%s) 的 dispatch_id=%r 在 %s 无证据台账。"
+                        "产物疑似由主 Agent 单会话直写；必须经 courseware_dispatch 派发子 Agent 生成。"
+                        % (pid, _role, (_detail or {}).get("dispatch_id"),
+                           agent_evidence.EVIDENCE_DIR_REL)
+                    )
+                elif _reason == "EVIDENCE_FORGED":
+                    fails.append(
+                        "[EVIDENCE_FORGED] 题目 %s (%s) 的代理证据 HMAC 签名无效（台账被伪造或篡改）。"
+                        % (pid, _role)
+                    )
+                elif _reason == "EVIDENCE_ID_MISMATCH":
+                    fails.append(
+                        "[EVIDENCE_ID_MISMATCH] 题目 %s (%s) 的证据台账不可解析或内部 dispatch_id 与文件名不一致。"
+                        % (pid, _role)
+                    )
+                elif _reason == "evidence_status_not_ok":
+                    fails.append(
+                        "[EVIDENCE_STATUS_NOT_OK] 题目 %s (%s) 的证据台账 status 非 ok（派发未完成）。"
+                        % (pid, _role)
+                    )
+                elif _reason == "evidence_worker_invalid":
+                    fails.append(
+                        "[EVIDENCE_WORKER_INVALID] 题目 %s (%s) 的证据台账 worker=%r 不是子 Agent 身份"
+                        "（应为 subagent: 或 llm-worker: 前缀）。"
+                        % (pid, _role, (_detail or {}).get("worker"))
+                    )
+                elif _reason == "evidence_artifact_not_recorded":
+                    fails.append(
+                        "[EVIDENCE_ARTIFACT_NOT_RECORDED] 题目 %s (%s) 未登记在证据台账的 "
+                        "artifacts_written / output_digests 中（%s）。"
+                        % (pid, _role, _rel)
+                    )
+                elif _reason == "evidence_stale":
+                    fails.append(
+                        "[EVIDENCE_STALE] 题目 %s (%s) 的产物与证据台账摘要不一致"
+                        "（证据落盘后产物被篡改，或产物并非该次派发所写）。"
+                        % (pid, _role)
+                    )
+                elif _reason == "non_uuid_format":
+                    fails.append(
+                        "[FORGED_SUBAGENT_CALL] 题目 %s (%s) 的 subagent_conversation_id=%r "
+                        "不是合法 UUID 格式（期望 8-4-4-4-12 十六进制，RFC 4122）。"
                         "主进程直接撰写此文件并填写伪造 ID，门禁拒绝通过。"
-                        % (pid, _role, _cid)
+                        % (pid, _role, (_detail or {}).get("dispatch_id"))
                     )
                 elif _reason == "no_local_session_dir":
-                    # === 第二层：本地物理存在性校验 ===
                     fails.append(
-                        "[FORGED_SUBAGENT_CALL] 题目 %s (%s) 的 "
-                        "subagent_conversation_id=%r 在本地 Brain 目录下 "
-                        "不存在对应子会话目录（%s/%s）。"
+                        "[FORGED_SUBAGENT_CALL] 题目 %s (%s) 的 subagent_conversation_id=%r "
+                        "在本地 Brain 目录下不存在对应子会话目录（%s）。"
                         "该 ID 从未经由真实 invoke_subagent 创建，门禁拒绝通过。"
-                        % (pid, _role, _cid, _AGY_BRAIN_DIR, _cid)
+                        % (pid, _role, (_detail or {}).get("dispatch_id"),
+                           os.path.join(_AGY_BRAIN_DIR, (_detail or {}).get("dispatch_id")))
                     )
                 elif _reason == "empty_session_or_no_log":
-                    # === 第二层加固：穿透校验 transcript 真实性（防 mkdir 空目录） ===
                     fails.append(
-                        "[FORGED_SUBAGENT_CALL] 题目 %s (%s) 的 "
-                        "subagent_conversation_id=%r 对应的会话目录存在但缺少真实 "
+                        "[FORGED_SUBAGENT_CALL] 题目 %s (%s) 对应的会话目录存在但缺少真实 "
                         "transcript.jsonl 日志或 MODEL 执行证据（疑似通过 mkdir 伪造空目录）。"
                         "必须由真实 invoke_subagent 执行并产生日志，门禁拒绝通过。"
-                        % (pid, _role, _cid)
+                        % (pid, _role)
                     )
-                continue  # 格式或物理校验已失败，不计入重复检测集合
+                continue  # 校验已失败，不计入互异检测集合
 
-            _conv_ids[_role] = _cid
+            _conv_ids[_role] = (_detail or {}).get("dispatch_id", "")
+            evidence.setdefault("agent_evidence", []).append({
+                "problem_id": pid,
+                "role": _role,
+                "dispatch_id": (_detail or {}).get("dispatch_id", ""),
+                "worker": (_detail or {}).get("worker", ""),
+                "provider": (_detail or {}).get("provider", ""),
+                "model": (_detail or {}).get("model", ""),
+                "legacy": bool((_detail or {}).get("legacy", False)),
+            })
 
         # === 第三层：互不重复校验 ===
         if len(set(_conv_ids.values())) < len(_conv_ids):
             _dup_roles = sorted(_conv_ids.keys())
             fails.append(
-                "[FORGED_SUBAGENT_CALL] 题目 %s 的三件套 "
-                "subagent_conversation_id 存在重复（%s）；"
-                "probe/pitfall/solver 必须由互相独立的子会话执行，"
+                "[FORGED_SUBAGENT_CALL] 题目 %s 的三件套 dispatch_id 存在重复（%s）；"
+                "probe/pitfall/solver 必须由互相独立的派发执行，"
                 "主进程代劳将导致 ID 相同，门禁拒绝通过。"
                 % (pid, {r: _conv_ids[r] for r in _dup_roles})
             )
@@ -576,6 +729,13 @@ def main():
     findings = ([{"severity": "error", "message": m} for m in fatal]
                 + [{"severity": "fail", "message": m} for m in fails]
                 + [{"severity": "review", "message": m} for m in reviews])
+    if fatal:
+        # NB5: 输入缺失/不可读（如误传非项目目录）时，仅打印到 stdout，
+        # 不在目标目录创建 research/checks/ 空壳目录（零副作用）。
+        for m in fatal:
+            print("[check_research] [错误] " + m)
+        print("[check_research] status=error，输入缺失，未写入报告")
+        return 2
     report_path = args.json or os.path.join(root, DEFAULT_REPORT)
     report = contract.write_check_report(report_path, status, "research",
                                          findings)

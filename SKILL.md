@@ -94,6 +94,7 @@ python workflow/runner.py --project . --status
 
 ## 异常与自动流转机制
 
+- **认知工位子 Agent 派发红线（零信任证据链）**：当流水线因认知工位（T1 架构、T2 学生任务、RB 探针与解答重做、定点返修）抛出 `AGENT_DISPATCH` 或 `AGENT_DISPATCH_BATCH` 挂起时，**主 Agent 严禁在当前会话直接撰写或修改声明的 artifacts 文件**！必须调用 `courseware_dispatch` 工具派发独立子 Agent 完成。子 Agent 以 JSON 回复，宿主原子写入并生成带 HMAC 签名的证据台账（`teaching/agent-calls/<dispatch_id>.json`）。任何无证据台账的产物在重推导与门禁检查中一律判定为 `ok_unattested` 并触发阻断（`check_agent_audit.py` 拦截）。
 - **局部小问返修（`REPAIR_TASK`）**：若 `check_student_task.py` 检测到引导黑话越界、字符预算超限或小问格式不合规，图引擎自动路由至 `repair_small_output` 节点，重试提交，无需重跑教研。
 - **T2 学生任务自审（默认开启）**：T2 批次产物落盘后先按题派发自审子 agent（role=`student-task-review`，产物 `review-student.json`，可定点修复 `student-task.json`），再进入核验与三重门禁；自审子 agent 持有 teacher-solution packet（完整证明视野），核验每条证明义务被 obligation_refs 覆盖、末位小问收束到原题结论。仅当项目 `config.yaml` 显式写 `enable_t2_self_review: false` 才关闭。
 - **数学漏洞退回（`RESEARCH_BACK`）**：若检测到实质性解法错误，图引擎自动吊销 `freeze.json`，随后按 **probe → solver 两阶段**重做教研：先为每题派发探针/坑点重做（role=`probe`），全部完成后再为每题派发重新研学（role=`solver`），全部产物逐单校验后回到 R2。每题一个独立派发单与子会话，probe 与 solver 的会话 ID 必须互异。
